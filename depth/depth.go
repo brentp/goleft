@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	arg "github.com/alexflint/go-arg"
+	"github.com/brentp/faidx"
 	"github.com/brentp/gargs/process"
 	"github.com/brentp/xopen"
 	"github.com/fatih/color"
@@ -29,6 +30,7 @@ type dargs struct {
 	Q            int     `arg:"-Q,help:mapping quality cutoff"`
 	Chrom        string  `arg:"-c,help:optional chromosome to limit analysis"`
 	MinCov       int     `arg:"help:minimum depth considered callable"`
+	Stats        bool    `arg:"-s,help:report sequence stats [GC CpG masked] for each window"`
 	Reference    string  `arg:"-r,required,help:path to reference fasta"`
 	Processes    int     `arg:"-p,help:number of processors to parallelize."`
 	Prefix       string  `arg:"positional,required,help:prefix for output files [\-depth.bed, \-callable.bed]"`
@@ -62,7 +64,7 @@ func max(a, b int) int {
 func genCommands(args dargs) chan string {
 	ch := make(chan string, 20)
 	go func() {
-		step := 10000000
+		step := 5000000
 
 		rdr, err := xopen.Ropen(args.Reference + ".fai")
 		pcheck(err)
@@ -82,7 +84,6 @@ func genCommands(args dargs) chan string {
 			pcheck(err)
 			for i := 0; i < length; i += step {
 				region := fmt.Sprintf("%s:%d-%d", chrom, i, min(i+step, length))
-				log.Println(region)
 				ch <- fmt.Sprintf(command, args.Q, region, args.Reference, args.Bam)
 			}
 		}
@@ -118,6 +119,17 @@ func mean(sl []int) float64 {
 	return float64(sum) / float64(len(sl))
 }
 
+func getStats(fa *faidx.Faidx, chrom string, start, end int) string {
+	if fa == nil {
+		return ""
+	}
+	st, err := fa.Stats(chrom, start, end)
+	if err != nil {
+		log.Println(err)
+	}
+	return fmt.Sprintf("\t%.2f\t%.2f\t%.2f", st.GC, st.CpG, st.Masked)
+}
+
 func run(args dargs) {
 
 	f, err := os.Create("depth.pprof")
@@ -130,6 +142,16 @@ func run(args dargs) {
 	callback := func(r io.Reader, w io.WriteCloser) error {
 		rdr := bufio.NewReader(r)
 		wtr := bufio.NewWriter(w)
+
+		var fa *faidx.Faidx
+		var err error
+		if args.Stats {
+			fa, err = faidx.New(args.Reference)
+			defer fa.Close()
+		}
+		if err != nil {
+			return err
+		}
 
 		defer w.Close()
 		defer wtr.Flush()
@@ -179,8 +201,9 @@ func run(args dargs) {
 			// if we have a full window...
 			if pos/args.WindowSize != lastWindow {
 				s := lastWindow * args.WindowSize
-				if d := mean(depthCache); d >= args.MaxMeanDepth {
-					fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%.2f\n", chrom, s, s+args.WindowSize, mean(depthCache)))
+				if d := mean(depthCache); d >= args.MaxMeanDepth && len(depthCache) > 0 {
+					stats := getStats(fa, chrom, s, s+args.WindowSize)
+					fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%.2f%s\n", chrom, s, s+args.WindowSize, mean(depthCache), stats))
 				}
 				depthCache = depthCache[:0]
 				lastWindow = pos / args.WindowSize
@@ -196,7 +219,8 @@ func run(args dargs) {
 			// check for a gap or a change in the coverage class.
 			if cov != lastCov || pos != cache[1].pos+1 {
 				if lastChrom != "" {
-					fhCA.WriteString(fmt.Sprintf("%s\t%d\t%d\t%s\n", lastChrom, cache[0].pos-1, cache[1].pos, lastCov))
+					stats := getStats(fa, lastChrom, cache[0].pos-1, cache[1].pos)
+					fhCA.WriteString(fmt.Sprintf("%s\t%d\t%d\t%s%s\n", lastChrom, cache[0].pos-1, cache[1].pos, lastCov, stats))
 				}
 				lastCov = cov
 				lastChrom = chrom
