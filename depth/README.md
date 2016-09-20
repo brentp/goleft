@@ -25,6 +25,6 @@ options:
                          path to reference fasta
   --processes PROCESSES, -p PROCESSES
                          number of processors to parallelize.
-  --bed BED, -b BED      file of positions or regions.
+  --bed BED, -b BED      file of positions or regions. (parallelization will be by region).
   --prefix PREFIX
   --help, -h             display this help and exit
