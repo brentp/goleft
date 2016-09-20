@@ -6,7 +6,7 @@ It outputs a bed file of callable regions (determined by mincov) and of depth (o
 with >= `maxmeandepth` are reported.
 
 ```
-usage: goleft depth [--windowsize WINDOWSIZE] [--maxmeandepth MAXMEANDEPTH] [--q Q] [--chrom CHROM] [--mincov MINCOV] [--stats] --reference REFERENCE [--processes PROCESSES] [--prefix PREFIX] BAM
+usage: goleft depth [--windowsize WINDOWSIZE] [--maxmeandepth MAXMEANDEPTH] [--q Q] [--chrom CHROM] [--mincov MINCOV] [--stats] --reference REFERENCE [--processes PROCESSES] [--bed BED] [--prefix PREFIX] BAM
 
 positional arguments:
   bam                    bam for which to calculate depth
@@ -25,6 +25,6 @@ options:
                          path to reference fasta
   --processes PROCESSES, -p PROCESSES
                          number of processors to parallelize.
+  --bed BED, -b BED      file of positions or regions.
   --prefix PREFIX
   --help, -h             display this help and exit
-```

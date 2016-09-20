@@ -12,6 +12,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"runtime/pprof"
 	"strconv"
@@ -33,6 +34,7 @@ type dargs struct {
 	Stats        bool    `arg:"-s,help:report sequence stats [GC CpG masked] for each window"`
 	Reference    string  `arg:"-r,required,help:path to reference fasta"`
 	Processes    int     `arg:"-p,help:number of processors to parallelize."`
+	Bed          string  `arg:"-b,help:optional file of positions or regions to restrict depth calculations."`
 	Prefix       string  `arg:"positional,required,help:prefix for output files [\-depth.bed, \-callable.bed]"`
 	Bam          string  `arg:"positional,required,help:bam for which to calculate depth"`
 }
@@ -61,8 +63,39 @@ func max(a, b int) int {
 	return b
 }
 
+// when the user specified a Bed file of regions for coverage, this is used.
+func genFromBed(ch chan string, args dargs) {
+	rdr, err := xopen.Ropen(args.Bed)
+	pcheck(err)
+	// match 1:222-333 and 1\t222\t333
+	re := regexp.MustCompile("(.+?)[:\t](\\d+)[\\-\t](\\d+).*?")
+
+	for {
+		line, err := rdr.ReadBytes('\n')
+		if err == io.EOF {
+			break
+		}
+		pcheck(err)
+		if len(line) == 0 {
+			continue
+		}
+		ret := re.FindSubmatch(line)
+		if len(ret) != 4 {
+			log.Fatal("couldn't get region from line", line)
+		}
+		chrom, start, end := ret[1], ret[2], ret[3]
+		region := fmt.Sprintf("%s:%s-%s", chrom, start, end)
+		ch <- fmt.Sprintf(command, args.Q, region, args.Reference, args.Bam)
+	}
+	close(ch)
+}
+
 func genCommands(args dargs) chan string {
-	ch := make(chan string, 20)
+	ch := make(chan string)
+	if args.Bed != "" {
+		go genFromBed(ch, args)
+		return ch
+	}
 	go func() {
 		step := 5000000
 
