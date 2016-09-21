@@ -1,3 +1,8 @@
+<!--
+```
+CGO_ENABLED=0 go build -o hist \-\-ldflags '-extldflags "-static"' hist.go
+``
+-->
 # goleft
 
 goleft is a collection of bioinformatics tools written in
