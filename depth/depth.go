@@ -292,7 +292,9 @@ func run(args dargs) {
 	defer fhca.Flush()
 	defer fhhd.Flush()
 
-	for cmd := range process.Runner(genCommands(args), 1, cancel, callback) {
+	opts := process.Options{Retries: 1, CallBack: callback, Ordered: false}
+
+	for cmd := range process.Runner(genCommands(args), cancel, &opts) {
 		if ex := cmd.ExitCode(); ex != 0 && cmd.Err != io.EOF {
 			c := color.New(color.BgRed).Add(color.Bold)
 			fmt.Fprintf(os.Stderr, "%s\n", c.SprintFunc()(fmt.Sprintf("ERROR with command: %s", cmd)))
