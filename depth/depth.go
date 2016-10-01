@@ -167,15 +167,6 @@ func getStats(fa *faidx.Faidx, chrom string, start, end int) string {
 
 func run(args dargs) {
 
-	/*
-		f, err := os.Create("depth.pprof")
-		if err != nil {
-			log.Fatal(err)
-		}
-		pprof.StartCPUProfile(f)
-		defer pprof.StopCPUProfile()
-	*/
-
 	callback := func(r io.Reader, w io.WriteCloser) error {
 		rdr := bufio.NewReader(r)
 		wtr := bufio.NewWriter(w)
@@ -221,6 +212,7 @@ func run(args dargs) {
 
 			chrom = line[:strings.Index(line, "\t")]
 
+			// toks starts after chrom. so [0] is pos and [1] is depth.
 			toks = strings.SplitN(line[len(chrom)+1:], "\t", 2)
 			pos, err = strconv.Atoi(toks[0])
 			if err != nil {
