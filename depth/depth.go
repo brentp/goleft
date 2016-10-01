@@ -14,7 +14,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
-	"runtime/pprof"
 	"strconv"
 	"strings"
 
@@ -45,7 +44,7 @@ var exitCode = 0
 
 func pcheck(e error) {
 	if e != nil {
-		panic(e)
+		log.Fatal(e)
 	}
 }
 
@@ -132,7 +131,10 @@ func Main() {
 		MaxMeanDepth: 0,
 		MinCov:       4,
 		Q:            1}
-	arg.MustParse(&args)
+	p := arg.MustParse(&args)
+	if args.Prefix == "" {
+		p.Fail("you must specify an output prefix")
+	}
 	runtime.GOMAXPROCS(args.Processes)
 	run(args)
 	os.Exit(exitCode)
@@ -165,12 +167,14 @@ func getStats(fa *faidx.Faidx, chrom string, start, end int) string {
 
 func run(args dargs) {
 
-	f, err := os.Create("depth.pprof")
-	if err != nil {
-		log.Fatal(err)
-	}
-	pprof.StartCPUProfile(f)
-	defer pprof.StopCPUProfile()
+	/*
+		f, err := os.Create("depth.pprof")
+		if err != nil {
+			log.Fatal(err)
+		}
+		pprof.StartCPUProfile(f)
+		defer pprof.StopCPUProfile()
+	*/
 
 	callback := func(r io.Reader, w io.WriteCloser) error {
 		rdr := bufio.NewReader(r)
