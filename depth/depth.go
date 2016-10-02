@@ -28,6 +28,7 @@ import (
 type dargs struct {
 	WindowSize   int    `arg:"-w,help:window size in which to calculate high-depth regions"`
 	MaxMeanDepth int    `arg:"-m,help:windows with depth > than this are high-depth. The default reports the depth of all regions."`
+	Ordered      bool   `args:-o,help:force output to be in same order as input even with -p."`
 	Q            int    `arg:"-Q,help:mapping quality cutoff"`
 	Chrom        string `arg:"-c,help:optional chromosome to limit analysis"`
 	MinCov       int    `arg:"help:minimum depth considered callable"`
@@ -112,7 +113,7 @@ func genFromBed(ch chan string, args dargs) {
 			continue
 		}
 		region := regionFromLine(line)
-		ch <- fmt.Sprintf(command, region, args.Q, max(args.MaxMeanDepth+1000, 8000),
+		ch <- fmt.Sprintf(command, region, args.Q, args.MaxMeanDepth+1000,
 			region, args.Reference, args.Bam)
 	}
 	close(ch)
@@ -144,7 +145,7 @@ func genCommands(args dargs) chan string {
 			pcheck(err)
 			for i := 0; i < length; i += step {
 				region := fmt.Sprintf("%s:%d-%d", chrom, i, min(i+step, length))
-				ch <- fmt.Sprintf(command, region, args.Q, max(args.MaxMeanDepth+1000, 8000),
+				ch <- fmt.Sprintf(command, region, args.Q, args.MaxMeanDepth+1000,
 					region, args.Reference, args.Bam)
 			}
 		}
@@ -321,7 +322,6 @@ func run(args dargs) {
 			for ds := cache[1].pos / args.WindowSize * args.WindowSize; ds < regionEnd; ds += args.WindowSize {
 				thisWindow := ds / args.WindowSize
 				stats := getStats(fa, chrom, thisWindow, thisWindow+args.WindowSize)
-				log.Println(stats)
 				fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%.2f%s\n", chrom, ds, ds+args.WindowSize, mean(depthCache), stats))
 				depthCache = depthCache[:0]
 			}
@@ -348,7 +348,7 @@ func run(args dargs) {
 	defer fhca.Flush()
 	defer fhhd.Flush()
 
-	opts := process.Options{Retries: 1, CallBack: callback, Ordered: false}
+	opts := process.Options{Retries: 1, CallBack: callback, Ordered: args.Ordered}
 
 	for cmd := range process.Runner(genCommands(args), cancel, &opts) {
 		if ex := cmd.ExitCode(); ex != 0 && cmd.Err != io.EOF {
