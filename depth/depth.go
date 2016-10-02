@@ -7,6 +7,7 @@ package depth
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"io"
 	"log"
@@ -25,17 +26,17 @@ import (
 )
 
 type dargs struct {
-	WindowSize   int     `arg:"-w,help:window size in which to calculate high-depth regions"`
-	MaxMeanDepth int `arg:"-m,help:windows with depth > than this are high-depth. The default reports the depth of all regions."`
-	Q            int     `arg:"-Q,help:mapping quality cutoff"`
-	Chrom        string  `arg:"-c,help:optional chromosome to limit analysis"`
-	MinCov       int     `arg:"help:minimum depth considered callable"`
-	Stats        bool    `arg:"-s,help:report sequence stats [GC CpG masked] for each window"`
-	Reference    string  `arg:"-r,required,help:path to reference fasta"`
-	Processes    int     `arg:"-p,help:number of processors to parallelize."`
-	Bed          string  `arg:"-b,help:optional file of positions or regions to restrict depth calculations."`
-	Prefix       string  `arg:"positional,required,help:prefix for output files [\-depth.bed, \-callable.bed]"`
-	Bam          string  `arg:"positional,required,help:bam for which to calculate depth"`
+	WindowSize   int    `arg:"-w,help:window size in which to calculate high-depth regions"`
+	MaxMeanDepth int    `arg:"-m,help:windows with depth > than this are high-depth. The default reports the depth of all regions."`
+	Q            int    `arg:"-Q,help:mapping quality cutoff"`
+	Chrom        string `arg:"-c,help:optional chromosome to limit analysis"`
+	MinCov       int    `arg:"help:minimum depth considered callable"`
+	Stats        bool   `arg:"-s,help:report sequence stats [GC CpG masked] for each window"`
+	Reference    string `arg:"-r,required,help:path to reference fasta"`
+	Processes    int    `arg:"-p,help:number of processors to parallelize."`
+	Bed          string `arg:"-b,help:optional file of positions or regions to restrict depth calculations."`
+	Prefix       string `arg:"positional,required,help:prefix for output files [\-depth.bed, \-callable.bed]"`
+	Bam          string `arg:"positional,required,help:bam for which to calculate depth"`
 }
 
 const command = "samtools depth -Q %d -d %d -r %s --reference %s %s"
@@ -67,7 +68,7 @@ func genFromBed(ch chan string, args dargs) {
 	rdr, err := xopen.Ropen(args.Bed)
 	pcheck(err)
 	// match 1:222-333 and 1\t222\t333
-	re := regexp.MustCompile("(.+?)[:\t](\\d+)[\\-\t](\\d+).*?")
+	re := regexp.MustCompile("(.+?)[:\t](\\d+)([\\-\t])(\\d+).*?")
 
 	for {
 		line, err := rdr.ReadBytes('\n')
@@ -79,13 +80,21 @@ func genFromBed(ch chan string, args dargs) {
 			continue
 		}
 		ret := re.FindSubmatch(line)
-		if len(ret) != 4 {
+		if len(ret) != 5 {
 			log.Fatal("couldn't get region from line", line)
 		}
-		chrom, start, end := ret[1], ret[2], ret[3]
+		chrom, start, isep, end := ret[1], ret[2], ret[3], ret[4]
+		// convert from bed to chrom:start-end region so add 1 to start
+		if !bytes.Equal(isep, []byte{'-'}) {
+			istart, err := strconv.Atoi(string(start))
+			if err != nil {
+				log.Fatal(err)
+			}
+			start = []byte(strconv.Itoa(istart + 1))
+		}
 		region := fmt.Sprintf("%s:%s-%s", chrom, start, end)
-		ch <- fmt.Sprintf(command, args.Q, max(args.MaxMeanDepth + 1000, 8000),
-		                  region, args.Reference, args.Bam)
+		ch <- fmt.Sprintf(command, args.Q, max(args.MaxMeanDepth+1000, 8000),
+			region, args.Reference, args.Bam)
 	}
 	close(ch)
 }
@@ -117,8 +126,8 @@ func genCommands(args dargs) chan string {
 			pcheck(err)
 			for i := 0; i < length; i += step {
 				region := fmt.Sprintf("%s:%d-%d", chrom, i, min(i+step, length))
-				ch <- fmt.Sprintf(command, args.Q, max(args.MaxMeanDepth + 1000, 8000),
-				                  region, args.Reference, args.Bam)
+				ch <- fmt.Sprintf(command, args.Q, max(args.MaxMeanDepth+1000, 8000),
+					region, args.Reference, args.Bam)
 			}
 		}
 		close(ch)
@@ -149,6 +158,9 @@ type ipos struct {
 }
 
 func mean(sl []int) float64 {
+	if len(sl) == 0 {
+		return 0
+	}
 	sum := 0
 	for _, v := range sl {
 		sum += v
@@ -231,13 +243,18 @@ func run(args dargs) {
 			}
 			// if we have a full window...
 			if pos/args.WindowSize != lastWindow {
-				s := lastWindow * args.WindowSize
-				if len(depthCache) > 0 {
+				thisWindow := pos / args.WindowSize
+				// fill in empty windows:
+				for iwindow := lastWindow + 1; iwindow < thisWindow; iwindow++ {
+					s := iwindow * args.WindowSize
 					stats := getStats(fa, chrom, s, s+args.WindowSize)
-					fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%.2f%s\n", chrom, s, s+args.WindowSize, mean(depthCache), stats))
+					fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%d%s\n", chrom, s, s+args.WindowSize, 0, stats))
 				}
+				// fill in this window:
+				stats := getStats(fa, chrom, thisWindow, thisWindow+args.WindowSize)
+				fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%d%s\n", chrom, thisWindow, thisWindow+args.WindowSize, mean(depthCache), stats))
 				depthCache = depthCache[:0]
-				lastWindow = pos / args.WindowSize
+				lastWindow = thisWindow
 			}
 			depthCache = append(depthCache, depth)
 
@@ -253,6 +270,10 @@ func run(args dargs) {
 			if cov != lastCov || pos != cache[1].pos+1 {
 				if lastChrom != "" {
 					fhCA.WriteString(fmt.Sprintf("%s\t%d\t%d\t%s\n", lastChrom, cache[0].pos-1, cache[1].pos, lastCov))
+					// also fill in block without any coverage.
+					if pos != cache[1].pos+1 {
+						fhCA.WriteString(fmt.Sprintf("%s\t%d\t%d\t%s\n", lastChrom, cache[1].pos, pos-1, "NO_COVERAGE"))
+					}
 				}
 				lastCov = cov
 				lastChrom = chrom
