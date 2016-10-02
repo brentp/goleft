@@ -39,7 +39,12 @@ type dargs struct {
 	Bam          string `arg:"positional,required,help:bam for which to calculate depth"`
 }
 
-const command = "samtools depth -Q %d -d %d -r %s --reference %s %s"
+// we echo the region first so the callback knows the full extents even if there is NOTE
+// coverage for part of it.
+const command = "echo %s; samtools depth -Q %d -d %d -r %s --reference %s %s"
+
+// this is the size in basepairs of the genomic chunks for parallelization.
+const step = 5000000
 
 var exitCode = 0
 
@@ -63,13 +68,40 @@ func max(a, b int) int {
 	return b
 }
 
+// match chrom:start-end and chrom\tstart\tend
+var re = regexp.MustCompile("(.+?)[:\t](\\d+)([\\-\t])(\\d+).*?")
+
+func chromStartEndFromLine(line []byte) (string, int, int) {
+	ret := re.FindSubmatch(line)
+	if len(ret) != 5 {
+		log.Fatal("couldn't get region from line", line)
+	}
+	chrom, start, isep, end := ret[1], ret[2], ret[3], ret[4]
+	// convert from bed to chrom:start-end region so add 1 to start
+	istart, err := strconv.Atoi(string(start))
+	if err != nil {
+		log.Fatal(err)
+	}
+	if bytes.Equal(isep, []byte{'-'}) {
+		istart--
+	}
+	iend, err := strconv.Atoi(string(end))
+	if err != nil {
+		log.Fatal(err)
+	}
+	return string(chrom), istart, iend
+}
+
+func regionFromLine(line []byte) string {
+	chrom, start, end := chromStartEndFromLine(line)
+	// convert from bed to chrom:start-end region so add 1 to start
+	return fmt.Sprintf("%s:%d-%d", chrom, start+1, end)
+}
+
 // when the user specified a Bed file of regions for coverage, this is used.
 func genFromBed(ch chan string, args dargs) {
 	rdr, err := xopen.Ropen(args.Bed)
 	pcheck(err)
-	// match 1:222-333 and 1\t222\t333
-	re := regexp.MustCompile("(.+?)[:\t](\\d+)([\\-\t])(\\d+).*?")
-
 	for {
 		line, err := rdr.ReadBytes('\n')
 		if err == io.EOF {
@@ -79,21 +111,8 @@ func genFromBed(ch chan string, args dargs) {
 		if len(line) == 0 {
 			continue
 		}
-		ret := re.FindSubmatch(line)
-		if len(ret) != 5 {
-			log.Fatal("couldn't get region from line", line)
-		}
-		chrom, start, isep, end := ret[1], ret[2], ret[3], ret[4]
-		// convert from bed to chrom:start-end region so add 1 to start
-		if !bytes.Equal(isep, []byte{'-'}) {
-			istart, err := strconv.Atoi(string(start))
-			if err != nil {
-				log.Fatal(err)
-			}
-			start = []byte(strconv.Itoa(istart + 1))
-		}
-		region := fmt.Sprintf("%s:%s-%s", chrom, start, end)
-		ch <- fmt.Sprintf(command, args.Q, max(args.MaxMeanDepth+1000, 8000),
+		region := regionFromLine(line)
+		ch <- fmt.Sprintf(command, region, args.Q, max(args.MaxMeanDepth+1000, 8000),
 			region, args.Reference, args.Bam)
 	}
 	close(ch)
@@ -106,7 +125,6 @@ func genCommands(args dargs) chan string {
 		return ch
 	}
 	go func() {
-		step := 5000000
 
 		rdr, err := xopen.Ropen(args.Reference + ".fai")
 		pcheck(err)
@@ -126,7 +144,7 @@ func genCommands(args dargs) chan string {
 			pcheck(err)
 			for i := 0; i < length; i += step {
 				region := fmt.Sprintf("%s:%d-%d", chrom, i, min(i+step, length))
-				ch <- fmt.Sprintf(command, args.Q, max(args.MaxMeanDepth+1000, 8000),
+				ch <- fmt.Sprintf(command, region, args.Q, max(args.MaxMeanDepth+1000, 8000),
 					region, args.Reference, args.Bam)
 			}
 		}
@@ -200,34 +218,36 @@ func run(args dargs) {
 		cache := make([]ipos, 2)
 		depthCache := make([]int, 0, args.WindowSize)
 		var depth, pos int
-		var lastCov, lastChrom string
+		var lastCovClass, lastChrom string
 		lastWindow := -1
 
-		line, err := rdr.ReadString('\n')
+		region, err := rdr.ReadBytes('\n')
 		if err != nil {
 			return err
 		}
-		toks := strings.SplitN(line, "\t", 3)
-		hdPath := filepath.Join(os.TempDir(), fmt.Sprintf("%s-%s.depth.bed", toks[0], toks[1]))
+		chrom, start, regionEnd := chromStartEndFromLine(region)
+		lastWindow = start/args.WindowSize - 1
+
+		hdPath := filepath.Join(os.TempDir(), fmt.Sprintf("%s-%s-%s.depth.bed", chrom, start, regionEnd))
 		fhHD, ferr := xopen.Wopen(hdPath)
 		if ferr != nil {
 			return ferr
 		}
-		caPath := filepath.Join(os.TempDir(), fmt.Sprintf("%s-%s.callable.bed", toks[0], toks[1]))
+		caPath := filepath.Join(os.TempDir(), fmt.Sprintf("%s-%s-%s.callable.bed", chrom, start, regionEnd))
 		fhCA, ferr := xopen.Wopen(caPath)
 		if ferr != nil {
 			return ferr
 		}
 		defer fhCA.Close()
 		defer fhHD.Close()
-		var chrom string
 
+		line, err := rdr.ReadString('\n')
 		for err == nil {
 
 			chrom = line[:strings.Index(line, "\t")]
 
 			// toks starts after chrom. so [0] is pos and [1] is depth.
-			toks = strings.SplitN(line[len(chrom)+1:], "\t", 2)
+			toks := strings.SplitN(line[len(chrom)+1:], "\t", 2)
 			pos, err = strconv.Atoi(toks[0])
 			if err != nil {
 				break
@@ -244,39 +264,44 @@ func run(args dargs) {
 			// if we have a full window...
 			if pos/args.WindowSize != lastWindow {
 				thisWindow := pos / args.WindowSize
-				// fill in empty windows:
+				// fill in empty windows for which we had no coverage.
 				for iwindow := lastWindow + 1; iwindow < thisWindow; iwindow++ {
 					s := iwindow * args.WindowSize
 					stats := getStats(fa, chrom, s, s+args.WindowSize)
 					fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%d%s\n", chrom, s, s+args.WindowSize, 0, stats))
 				}
 				// fill in this window:
-				stats := getStats(fa, chrom, thisWindow, thisWindow+args.WindowSize)
 				s := thisWindow * args.WindowSize
-				fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%.2f%s\n", chrom, s, s+args.WindowSize, mean(depthCache), stats))
-				depthCache = depthCache[:0]
-				lastWindow = thisWindow
+				// we dont just break because we still need to print the stuff to the callable file below.
+				if s < regionEnd {
+					// NOTE: we include the full bin, even for the last postion in the region.w
+					// may want to truncate to min(s, s+args.WindowSize)
+					stats := getStats(fa, chrom, thisWindow, thisWindow+args.WindowSize)
+					fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%.2f%s\n", chrom, s, s+args.WindowSize, mean(depthCache), stats))
+					depthCache = depthCache[:0]
+					lastWindow = thisWindow
+				}
 			}
 			depthCache = append(depthCache, depth)
 
-			cov := "CALLABLE"
+			covClass := "CALLABLE"
 			if depth == 0 {
-				cov = "NO_COVERAGE"
+				covClass = "NO_COVERAGE"
 			} else if depth < args.MinCov {
-				cov = "LOW_COVERAGE"
+				covClass = "LOW_COVERAGE"
 			} else if args.MaxMeanDepth > 0 && depth >= args.MaxMeanDepth {
-				cov = "EXCESSIVE_COVERAGE"
+				covClass = "EXCESSIVE_COVERAGE"
 			}
 			// check for a gap or a change in the coverage class.
-			if cov != lastCov || pos != cache[1].pos+1 {
-				if lastChrom != "" {
-					fhCA.WriteString(fmt.Sprintf("%s\t%d\t%d\t%s\n", lastChrom, cache[0].pos-1, cache[1].pos, lastCov))
+			if covClass != lastCovClass || pos != cache[1].pos+1 {
+				if lastChrom != "" && cache[1].pos != 0 {
+					fhCA.WriteString(fmt.Sprintf("%s\t%d\t%d\t%s\n", lastChrom, cache[0].pos-1, cache[1].pos, lastCovClass))
 					// also fill in block without any coverage.
 					if pos != cache[1].pos+1 {
-						fhCA.WriteString(fmt.Sprintf("%s\t%d\t%d\t%s\n", lastChrom, cache[1].pos, pos-1, "NO_COVERAGE"))
+						fhCA.WriteString(fmt.Sprintf("%s\t%d\t%d\t%s\n", lastChrom, cache[1].pos-1, pos, "NO_COVERAGE"))
 					}
 				}
-				lastCov = cov
+				lastCovClass = covClass
 				lastChrom = chrom
 				cache = cache[:0]
 				// append twice so we can safely use cache[1] above.
@@ -285,11 +310,21 @@ func run(args dargs) {
 			} else {
 				cache[1].pos = pos
 			}
-
 			line, err = rdr.ReadString('\n')
 		}
 		if len(cache) > 1 {
-			fhCA.WriteString(fmt.Sprintf("%s\t%d\t%d\t%s\n", lastChrom, cache[0].pos-1, cache[1].pos, lastCov))
+			fhCA.WriteString(fmt.Sprintf("%s\t%d\t%d\t%s\n", lastChrom, cache[0].pos-1, cache[1].pos, lastCovClass))
+		}
+		// we didn't get data for the full region, so it must end in no-coverage.
+		if cache[1].pos < regionEnd {
+			fhCA.WriteString(fmt.Sprintf("%s\t%d\t%d\tNO_COVERAGE\n", lastChrom, cache[1].pos, regionEnd))
+			for ds := cache[1].pos / args.WindowSize * args.WindowSize; ds < regionEnd; ds += args.WindowSize {
+				thisWindow := ds / args.WindowSize
+				stats := getStats(fa, chrom, thisWindow, thisWindow+args.WindowSize)
+				log.Println(stats)
+				fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%.2f%s\n", chrom, ds, ds+args.WindowSize, mean(depthCache), stats))
+				depthCache = depthCache[:0]
+			}
 		}
 		wtr.WriteString(caPath + "\n")
 		wtr.WriteString(hdPath + "\n")
