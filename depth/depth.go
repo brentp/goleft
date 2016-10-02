@@ -252,7 +252,8 @@ func run(args dargs) {
 				}
 				// fill in this window:
 				stats := getStats(fa, chrom, thisWindow, thisWindow+args.WindowSize)
-				fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%d%s\n", chrom, thisWindow, thisWindow+args.WindowSize, mean(depthCache), stats))
+				s := thisWindow * args.WindowSize
+				fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%.2f%s\n", chrom, s, s+args.WindowSize, mean(depthCache), stats))
 				depthCache = depthCache[:0]
 				lastWindow = thisWindow
 			}
