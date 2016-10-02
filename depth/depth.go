@@ -26,7 +26,7 @@ import (
 
 type dargs struct {
 	WindowSize   int     `arg:"-w,help:window size in which to calculate high-depth regions"`
-	MaxMeanDepth float64 `arg:"-m,help:windows with depth > than this are high-depth. The default reports the depth of all regions."`
+	MaxMeanDepth int `arg:"-m,help:windows with depth > than this are high-depth. The default reports the depth of all regions."`
 	Q            int     `arg:"-Q,help:mapping quality cutoff"`
 	Chrom        string  `arg:"-c,help:optional chromosome to limit analysis"`
 	MinCov       int     `arg:"help:minimum depth considered callable"`
@@ -38,7 +38,7 @@ type dargs struct {
 	Bam          string  `arg:"positional,required,help:bam for which to calculate depth"`
 }
 
-const command = "samtools depth -Q %d -r %s --reference %s %s"
+const command = "samtools depth -Q %d -d %d -r %s --reference %s %s"
 
 var exitCode = 0
 
@@ -84,7 +84,8 @@ func genFromBed(ch chan string, args dargs) {
 		}
 		chrom, start, end := ret[1], ret[2], ret[3]
 		region := fmt.Sprintf("%s:%s-%s", chrom, start, end)
-		ch <- fmt.Sprintf(command, args.Q, region, args.Reference, args.Bam)
+		ch <- fmt.Sprintf(command, args.Q, max(args.MaxMeanDepth + 1000, 8000),
+		                  region, args.Reference, args.Bam)
 	}
 	close(ch)
 }
@@ -116,7 +117,8 @@ func genCommands(args dargs) chan string {
 			pcheck(err)
 			for i := 0; i < length; i += step {
 				region := fmt.Sprintf("%s:%d-%d", chrom, i, min(i+step, length))
-				ch <- fmt.Sprintf(command, args.Q, region, args.Reference, args.Bam)
+				ch <- fmt.Sprintf(command, args.Q, max(args.MaxMeanDepth + 1000, 8000),
+				                  region, args.Reference, args.Bam)
 			}
 		}
 		close(ch)
@@ -230,7 +232,7 @@ func run(args dargs) {
 			// if we have a full window...
 			if pos/args.WindowSize != lastWindow {
 				s := lastWindow * args.WindowSize
-				if d := mean(depthCache); d >= args.MaxMeanDepth && len(depthCache) > 0 {
+				if len(depthCache) > 0 {
 					stats := getStats(fa, chrom, s, s+args.WindowSize)
 					fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%.2f%s\n", chrom, s, s+args.WindowSize, mean(depthCache), stats))
 				}
@@ -244,12 +246,13 @@ func run(args dargs) {
 				cov = "NO_COVERAGE"
 			} else if depth < args.MinCov {
 				cov = "LOW_COVERAGE"
+			} else if args.MaxMeanDepth > 0 && depth >= args.MaxMeanDepth {
+				cov = "EXCESSIVE_COVERAGE"
 			}
 			// check for a gap or a change in the coverage class.
 			if cov != lastCov || pos != cache[1].pos+1 {
 				if lastChrom != "" {
-					stats := getStats(fa, lastChrom, cache[0].pos-1, cache[1].pos)
-					fhCA.WriteString(fmt.Sprintf("%s\t%d\t%d\t%s%s\n", lastChrom, cache[0].pos-1, cache[1].pos, lastCov, stats))
+					fhCA.WriteString(fmt.Sprintf("%s\t%d\t%d\t%s\n", lastChrom, cache[0].pos-1, cache[1].pos, lastCov))
 				}
 				lastCov = cov
 				lastChrom = chrom
