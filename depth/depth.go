@@ -299,7 +299,7 @@ func run(args dargs) {
 					fhCA.WriteString(fmt.Sprintf("%s\t%d\t%d\t%s\n", lastChrom, cache[0].pos-1, cache[1].pos, lastCovClass))
 					// also fill in block without any coverage.
 					if pos != cache[1].pos+1 {
-						fhCA.WriteString(fmt.Sprintf("%s\t%d\t%d\t%s\n", lastChrom, cache[1].pos-1, pos, "NO_COVERAGE"))
+						fhCA.WriteString(fmt.Sprintf("%s\t%d\t%d\t%s\n", lastChrom, cache[1].pos, pos-1, "NO_COVERAGE"))
 					}
 				}
 				lastCovClass = covClass
@@ -381,5 +381,4 @@ func run(args dargs) {
 	fhca.Close()
 	fhhd.Flush()
 	fhhd.Close()
-
 }
