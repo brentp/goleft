@@ -8,10 +8,9 @@ import (
 	"strconv"
 
 	"github.com/brentp/goleft/depth"
-	"github.com/brentp/goleft/hist"
 )
 
-const Version = "0.1.0"
+const Version = "0.1.1"
 
 type progPair struct {
 	help string
@@ -20,7 +19,6 @@ type progPair struct {
 
 var progs = map[string]progPair{
 	"depth": progPair{"parallelize calls to samtools in user-defined windows", depth.Main},
-	"hist":  progPair{"hist plots a histogram of (potentially) grouped data from stdin", hist.Main},
 }
 
 func printProgs() {
