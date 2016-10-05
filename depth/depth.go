@@ -313,12 +313,18 @@ func run(args dargs) {
 			}
 			line, err = rdr.ReadString('\n')
 		}
-		if len(cache) > 1 {
+		if len(cache) > 1 && lastChrom != "" && cache[0].pos != 0 {
 			fhCA.WriteString(fmt.Sprintf("%s\t%d\t%d\t%s\n", lastChrom, cache[0].pos-1, cache[1].pos, lastCovClass))
 		}
 		// we didn't get data for the full region, so it must end in no-coverage.
 		if cache[1].pos < regionEnd {
-			fhCA.WriteString(fmt.Sprintf("%s\t%d\t%d\tNO_COVERAGE\n", lastChrom, cache[1].pos, regionEnd))
+			// If we had regions within section
+			if cache[1].pos != 0 {
+				fhCA.WriteString(fmt.Sprintf("%s\t%d\t%d\tNO_COVERAGE\n", lastChrom, cache[1].pos, regionEnd))
+				// otherwise the whole region is NO_COVERAGE
+			} else {
+				fhCA.WriteString(fmt.Sprintf("%s\t%d\t%d\tNO_COVERAGE\n", chrom, start, regionEnd))
+			}
 			for ds := cache[1].pos / args.WindowSize * args.WindowSize; ds < regionEnd; ds += args.WindowSize {
 				thisWindow := ds / args.WindowSize
 				stats := getStats(fa, chrom, thisWindow, thisWindow+args.WindowSize)
