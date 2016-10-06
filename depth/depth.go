@@ -195,7 +195,7 @@ func getStats(fa *faidx.Faidx, chrom string, start, end int) string {
 	if err != nil {
 		log.Println(err)
 	}
-	return fmt.Sprintf("\t%.2f\t%.2f\t%.2f", st.GC, st.CpG, st.Masked)
+	return fmt.Sprintf("\t%.2g\t%.2g\t%.2g", st.GC, st.CpG, st.Masked)
 }
 
 func run(args dargs) {
@@ -278,7 +278,7 @@ func run(args dargs) {
 					// NOTE: we include the full bin, even for the last postion in the region.w
 					// may want to truncate to min(s, s+args.WindowSize)
 					stats := getStats(fa, chrom, thisWindow, thisWindow+args.WindowSize)
-					fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%.2f%s\n", chrom, s, s+args.WindowSize, mean(depthCache), stats))
+					fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%.2g%s\n", chrom, s, s+args.WindowSize, mean(depthCache), stats))
 					depthCache = depthCache[:0]
 					lastWindow = thisWindow
 				}
@@ -328,7 +328,7 @@ func run(args dargs) {
 			for ds := cache[1].pos / args.WindowSize * args.WindowSize; ds < regionEnd; ds += args.WindowSize {
 				thisWindow := ds / args.WindowSize
 				stats := getStats(fa, chrom, thisWindow, thisWindow+args.WindowSize)
-				fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%.2f%s\n", chrom, ds, ds+args.WindowSize, mean(depthCache), stats))
+				fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%.2g%s\n", chrom, ds, ds+args.WindowSize, mean(depthCache), stats))
 				depthCache = depthCache[:0]
 			}
 		}
