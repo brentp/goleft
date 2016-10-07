@@ -10,7 +10,7 @@ import (
 	"github.com/brentp/goleft/depth"
 )
 
-const Version = "0.1.3"
+const Version = "0.1.4"
 
 type progPair struct {
 	help string

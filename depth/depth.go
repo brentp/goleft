@@ -90,7 +90,7 @@ func chromStartEndFromLine(line []byte) (string, int, int) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	return string(chrom), istart, iend
+	return string(chrom), max(istart, 0), iend
 }
 
 func regionFromLine(line []byte) string {
@@ -180,11 +180,12 @@ func mean(sl []int) float64 {
 	if len(sl) == 0 {
 		return 0
 	}
-	sum := 0
+	l := float64(len(sl))
+	avg := float64(0)
 	for _, v := range sl {
-		sum += v
+		avg += float64(v) / l
 	}
-	return float64(sum) / float64(len(sl))
+	return avg
 }
 
 func getStats(fa *faidx.Faidx, chrom string, start, end int) string {
@@ -195,7 +196,7 @@ func getStats(fa *faidx.Faidx, chrom string, start, end int) string {
 	if err != nil {
 		log.Println(err)
 	}
-	return fmt.Sprintf("\t%.2g\t%.2g\t%.2g", st.GC, st.CpG, st.Masked)
+	return fmt.Sprintf("\t%.3g\t%.3g\t%.3g", st.GC, st.CpG, st.Masked)
 }
 
 func run(args dargs) {
@@ -216,32 +217,34 @@ func run(args dargs) {
 
 		defer w.Close()
 		defer wtr.Flush()
-		cache := make([]ipos, 2)
 		depthCache := make([]int, 0, args.WindowSize)
 		var depth, pos int
-		var lastCovClass, lastChrom string
-		lastWindow := -1
+		var lastCovClass string
 
 		region, err := rdr.ReadBytes('\n')
 		if err != nil {
 			return err
 		}
-		chrom, start, regionEnd := chromStartEndFromLine(region)
-		lastWindow = start/args.WindowSize - 1
+		// we echo the bounds of the region before the samtools depth call.
+		chrom, regionStart, regionEnd := chromStartEndFromLine(region)
+		lastWindow := max((regionStart+1)/args.WindowSize, 0)
 
-		hdPath := filepath.Join(os.TempDir(), fmt.Sprintf("%s-%s-%s.depth.bed", chrom, start, regionEnd))
+		cache := make([]ipos, 2)
+		cache[1].pos = regionStart
+		cache[0].pos = regionStart
+
+		hdPath := filepath.Join(os.TempDir(), fmt.Sprintf("%s-%s-%s.depth.bed", chrom, regionStart, regionEnd))
 		fhHD, ferr := xopen.Wopen(hdPath)
 		if ferr != nil {
 			return ferr
 		}
-		caPath := filepath.Join(os.TempDir(), fmt.Sprintf("%s-%s-%s.callable.bed", chrom, start, regionEnd))
+		caPath := filepath.Join(os.TempDir(), fmt.Sprintf("%s-%s-%s.callable.bed", chrom, regionStart, regionEnd))
 		fhCA, ferr := xopen.Wopen(caPath)
 		if ferr != nil {
 			return ferr
 		}
 		defer fhCA.Close()
 		defer fhHD.Close()
-		chromEnd := 0
 
 		line, err := rdr.ReadString('\n')
 		for err == nil {
@@ -265,27 +268,18 @@ func run(args dargs) {
 			}
 			// if we have a full window...
 			if pos/args.WindowSize != lastWindow {
-				if chrom != lastChrom {
-					chromEnd = fa.Index[chrom].Length
-				}
 				thisWindow := pos / args.WindowSize
-				// fill in empty windows for which we had no coverage.
-				for iwindow := lastWindow + 1; iwindow < thisWindow; iwindow++ {
+				// print lastWindow along with any windows without any coverage.
+				for iwindow := lastWindow; iwindow < thisWindow; iwindow++ {
 					s := iwindow * args.WindowSize
-					stats := getStats(fa, chrom, s, min(chromEnd, s+args.WindowSize))
-					fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%d%s\n", chrom, s, min(s+args.WindowSize, chromEnd), 0, stats))
+					if s+args.WindowSize > regionStart {
+						s = max(s, regionStart)
+						stats := getStats(fa, chrom, s, min(regionEnd, s+args.WindowSize))
+						fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%.4g%sYYY\n", chrom, s, min(s+args.WindowSize, regionEnd), mean(depthCache), stats))
+						depthCache = depthCache[:0]
+					}
 				}
-				// fill in this window:
-				s := thisWindow * args.WindowSize
-				// we dont just break because we still need to print the stuff to the callable file below.
-				if s < regionEnd {
-					// NOTE: we include the full bin, even for the last postion in the region.w
-					// may want to truncate to min(s, s+args.WindowSize)
-					stats := getStats(fa, chrom, thisWindow, min(chromEnd, thisWindow+args.WindowSize))
-					fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%.2g%s\n", chrom, s, min(chromEnd, s+args.WindowSize), mean(depthCache), stats))
-					depthCache = depthCache[:0]
-					lastWindow = thisWindow
-				}
+				lastWindow = thisWindow
 			}
 			depthCache = append(depthCache, depth)
 
@@ -299,15 +293,14 @@ func run(args dargs) {
 			}
 			// check for a gap or a change in the coverage class.
 			if covClass != lastCovClass || pos != cache[1].pos+1 {
-				if lastChrom != "" && cache[1].pos != 0 {
-					fhCA.WriteString(fmt.Sprintf("%s\t%d\t%d\t%s\n", lastChrom, cache[0].pos-1, cache[1].pos, lastCovClass))
-					// also fill in block without any coverage.
-					if pos != cache[1].pos+1 {
-						fhCA.WriteString(fmt.Sprintf("%s\t%d\t%d\t%s\n", lastChrom, cache[1].pos, pos-1, "NO_COVERAGE"))
-					}
+				if lastCovClass != "" {
+					fhCA.WriteString(fmt.Sprintf("%s\t%d\t%d\t%s\n", chrom, cache[0].pos-1, cache[1].pos, lastCovClass))
+				}
+				// also fill in block without any coverage.
+				if pos != cache[1].pos+1 {
+					fhCA.WriteString(fmt.Sprintf("%s\t%d\t%d\t%s\n", chrom, cache[1].pos, pos-1, "NO_COVERAGE"))
 				}
 				lastCovClass = covClass
-				lastChrom = chrom
 				cache = cache[:0]
 				// append twice so we can safely use cache[1] above.
 				cache = append(cache, ipos{chrom, pos, depth})
@@ -317,25 +310,31 @@ func run(args dargs) {
 			}
 			line, err = rdr.ReadString('\n')
 		}
-		if len(cache) > 1 && lastChrom != "" && cache[0].pos != 0 {
-			fhCA.WriteString(fmt.Sprintf("%s\t%d\t%d\t%s\n", lastChrom, cache[0].pos-1, cache[1].pos, lastCovClass))
+		if cache[0].pos != -1 {
+			fhCA.WriteString(fmt.Sprintf("%s\t%d\t%d\t%s\n", chrom, cache[0].pos-1, cache[1].pos, lastCovClass))
+		}
+		if len(depthCache) > 0 {
+			s := pos / args.WindowSize * args.WindowSize
+			if s < regionEnd {
+				s = max(s, regionStart)
+				stats := getStats(fa, chrom, s, min(regionEnd, s+args.WindowSize))
+				fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%.4g%s\n", chrom, s, min(s+args.WindowSize, regionEnd), mean(depthCache), stats))
+			}
+
 		}
 		// we didn't get data for the full region, so it must end in no-coverage.
 		if cache[1].pos < regionEnd {
-			if chrom != lastChrom {
-				chromEnd = fa.Index[chrom].Length
-			}
 			// If we had regions within section
-			if cache[1].pos != 0 {
-				fhCA.WriteString(fmt.Sprintf("%s\t%d\t%d\tNO_COVERAGE\n", lastChrom, cache[1].pos, regionEnd))
+			if cache[1].pos != -1 {
+				fhCA.WriteString(fmt.Sprintf("%s\t%d\t%d\tNO_COVERAGE\n", chrom, cache[1].pos, regionEnd))
 				// otherwise the whole region is NO_COVERAGE
 			} else {
-				fhCA.WriteString(fmt.Sprintf("%s\t%d\t%d\tNO_COVERAGE\n", chrom, start, regionEnd))
+				fhCA.WriteString(fmt.Sprintf("%s\t%d\t%d\tNO_COVERAGE\n", chrom, regionStart, regionEnd))
 			}
 			for ds := cache[1].pos / args.WindowSize * args.WindowSize; ds < regionEnd; ds += args.WindowSize {
 				thisWindow := ds / args.WindowSize
-				stats := getStats(fa, chrom, thisWindow, min(chromEnd, thisWindow+args.WindowSize))
-				fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%.2g%s\n", chrom, ds, min(chromEnd, ds+args.WindowSize), mean(depthCache), stats))
+				stats := getStats(fa, chrom, thisWindow, min(regionEnd, thisWindow+args.WindowSize))
+				fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%.4g%s\n", chrom, ds, min(regionEnd, ds+args.WindowSize), mean(depthCache), stats))
 				depthCache = depthCache[:0]
 			}
 		}
