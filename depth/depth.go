@@ -241,6 +241,7 @@ func run(args dargs) {
 		}
 		defer fhCA.Close()
 		defer fhHD.Close()
+		chromEnd := 0
 
 		line, err := rdr.ReadString('\n')
 		for err == nil {
@@ -264,12 +265,15 @@ func run(args dargs) {
 			}
 			// if we have a full window...
 			if pos/args.WindowSize != lastWindow {
+				if chrom != lastChrom {
+					chromEnd = fa.Index[chrom].Length
+				}
 				thisWindow := pos / args.WindowSize
 				// fill in empty windows for which we had no coverage.
 				for iwindow := lastWindow + 1; iwindow < thisWindow; iwindow++ {
 					s := iwindow * args.WindowSize
-					stats := getStats(fa, chrom, s, s+args.WindowSize)
-					fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%d%s\n", chrom, s, s+args.WindowSize, 0, stats))
+					stats := getStats(fa, chrom, s, min(chromEnd, s+args.WindowSize))
+					fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%d%s\n", chrom, s, min(s+args.WindowSize, chromEnd), 0, stats))
 				}
 				// fill in this window:
 				s := thisWindow * args.WindowSize
@@ -277,8 +281,8 @@ func run(args dargs) {
 				if s < regionEnd {
 					// NOTE: we include the full bin, even for the last postion in the region.w
 					// may want to truncate to min(s, s+args.WindowSize)
-					stats := getStats(fa, chrom, thisWindow, thisWindow+args.WindowSize)
-					fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%.2g%s\n", chrom, s, s+args.WindowSize, mean(depthCache), stats))
+					stats := getStats(fa, chrom, thisWindow, min(chromEnd, thisWindow+args.WindowSize))
+					fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%.2g%s\n", chrom, s, min(chromEnd, s+args.WindowSize), mean(depthCache), stats))
 					depthCache = depthCache[:0]
 					lastWindow = thisWindow
 				}
@@ -318,6 +322,9 @@ func run(args dargs) {
 		}
 		// we didn't get data for the full region, so it must end in no-coverage.
 		if cache[1].pos < regionEnd {
+			if chrom != lastChrom {
+				chromEnd = fa.Index[chrom].Length
+			}
 			// If we had regions within section
 			if cache[1].pos != 0 {
 				fhCA.WriteString(fmt.Sprintf("%s\t%d\t%d\tNO_COVERAGE\n", lastChrom, cache[1].pos, regionEnd))
@@ -327,8 +334,8 @@ func run(args dargs) {
 			}
 			for ds := cache[1].pos / args.WindowSize * args.WindowSize; ds < regionEnd; ds += args.WindowSize {
 				thisWindow := ds / args.WindowSize
-				stats := getStats(fa, chrom, thisWindow, thisWindow+args.WindowSize)
-				fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%.2g%s\n", chrom, ds, ds+args.WindowSize, mean(depthCache), stats))
+				stats := getStats(fa, chrom, thisWindow, min(chromEnd, thisWindow+args.WindowSize))
+				fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%.2g%s\n", chrom, ds, min(chromEnd, ds+args.WindowSize), mean(depthCache), stats))
 				depthCache = depthCache[:0]
 			}
 		}
