@@ -75,7 +75,7 @@ var re = regexp.MustCompile("(.+?)[:\t](\\d+)([\\-\t])(\\d+).*?")
 func chromStartEndFromLine(line []byte) (string, int, int) {
 	ret := re.FindSubmatch(line)
 	if len(ret) != 5 {
-		log.Fatal("couldn't get region from line", line)
+		log.Fatal("couldn't get region from line", string(line))
 	}
 	chrom, start, isep, end := ret[1], ret[2], ret[3], ret[4]
 	// convert from bed to chrom:start-end region so add 1 to start
