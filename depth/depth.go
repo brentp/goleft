@@ -233,12 +233,12 @@ func run(args dargs) {
 		cache[1].pos = regionStart
 		cache[0].pos = regionStart
 
-		hdPath := filepath.Join(os.TempDir(), fmt.Sprintf("%s-%s-%s.depth.bed", chrom, regionStart, regionEnd))
+		hdPath := filepath.Join(os.TempDir(), fmt.Sprintf("%s-%d-%d.depth.bed", chrom, regionStart, regionEnd))
 		fhHD, ferr := xopen.Wopen(hdPath)
 		if ferr != nil {
 			return ferr
 		}
-		caPath := filepath.Join(os.TempDir(), fmt.Sprintf("%s-%s-%s.callable.bed", chrom, regionStart, regionEnd))
+		caPath := filepath.Join(os.TempDir(), fmt.Sprintf("%s-%d-%d.callable.bed", chrom, regionStart, regionEnd))
 		fhCA, ferr := xopen.Wopen(caPath)
 		if ferr != nil {
 			return ferr
