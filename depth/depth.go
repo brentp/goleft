@@ -388,6 +388,7 @@ func run(args dargs) {
 		pcheck(err)
 		io.Copy(fhhd, hdSrc)
 		os.Remove(strings.TrimSpace(hdPath))
+		cmd.Cleanup()
 	}
 	fhca.Flush()
 	fhca.Close()
