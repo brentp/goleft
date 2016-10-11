@@ -227,7 +227,7 @@ func run(args dargs) {
 		}
 		// we echo the bounds of the region before the samtools depth call.
 		chrom, regionStart, regionEnd := chromStartEndFromLine(region)
-		lastWindow := max((regionStart+1)/args.WindowSize, 0)
+		lastWindow := max(regionStart/args.WindowSize, 0)
 
 		cache := make([]ipos, 2)
 		cache[1].pos = regionStart
@@ -275,7 +275,7 @@ func run(args dargs) {
 					if s+args.WindowSize > regionStart {
 						s = max(s, regionStart)
 						stats := getStats(fa, chrom, s, min(regionEnd, s+args.WindowSize))
-						fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%.4g%sYYY\n", chrom, s, min(s+args.WindowSize, regionEnd), mean(depthCache), stats))
+						fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%.4g%s\n", chrom, s, min(s+args.WindowSize, regionEnd), mean(depthCache), stats))
 						depthCache = depthCache[:0]
 					}
 				}
@@ -310,15 +310,17 @@ func run(args dargs) {
 			}
 			line, err = rdr.ReadString('\n')
 		}
-		if cache[0].pos != -1 {
+		if cache[0].pos != -1 && lastCovClass != "" {
 			fhCA.WriteString(fmt.Sprintf("%s\t%d\t%d\t%s\n", chrom, cache[0].pos-1, cache[1].pos, lastCovClass))
 		}
 		if len(depthCache) > 0 {
 			s := pos / args.WindowSize * args.WindowSize
 			if s < regionEnd {
 				s = max(s, regionStart)
-				stats := getStats(fa, chrom, s, min(regionEnd, s+args.WindowSize))
-				fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%.4g%s\n", chrom, s, min(s+args.WindowSize, regionEnd), mean(depthCache), stats))
+				e := min(regionEnd, s+args.WindowSize)
+				stats := getStats(fa, chrom, s, e)
+				fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%.4g%s\n", chrom, s, e, mean(depthCache), stats))
+				depthCache = depthCache[:0]
 			}
 
 		}
@@ -332,9 +334,10 @@ func run(args dargs) {
 				fhCA.WriteString(fmt.Sprintf("%s\t%d\t%d\tNO_COVERAGE\n", chrom, regionStart, regionEnd))
 			}
 			for ds := cache[1].pos / args.WindowSize * args.WindowSize; ds < regionEnd; ds += args.WindowSize {
-				thisWindow := ds / args.WindowSize
-				stats := getStats(fa, chrom, thisWindow, min(regionEnd, thisWindow+args.WindowSize))
-				fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%.4g%s\n", chrom, ds, min(regionEnd, ds+args.WindowSize), mean(depthCache), stats))
+				ds = max(ds, regionStart)
+				de := min(regionEnd, ds+args.WindowSize)
+				stats := getStats(fa, chrom, ds, de)
+				fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%.4g%s\n", chrom, ds, de, mean(depthCache), stats))
 				depthCache = depthCache[:0]
 			}
 		}

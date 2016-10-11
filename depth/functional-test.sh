@@ -3,7 +3,7 @@
 test -e ssshtest || wget -q https://raw.githubusercontent.com/ryanlayer/ssshtest/master/ssshtest
 
 . ssshtest
-set -e
+set -eo pipefail
 
 go build -o goleft ../main.go
 
@@ -40,10 +40,12 @@ for w in 55 60 71 13 2001; do
     assert_equal "$(check_with_fai_bt test/hg19.fa.fai x.callable.bed)" ""
 done
 
+
 run check_bed ./goleft depth --bed test/windows.bed -Q 1 --ordered --windowsize 10 --stats --prefix x --reference test/hg19.fa test/t.bam
 assert_exit_code 0
 assert_equal "$(check_with_bed_bt x.depth.bed test/windows.bed)" ""
 assert_equal "$(check_with_bed_bt x.callable.bed test/windows.bed)" ""
+
 
 run check_bed_big_window ./goleft depth --bed test/windows.bed -Q 1 --ordered --windowsize 1000000 --stats --prefix x --reference test/hg19.fa test/t.bam
 assert_exit_code 0
@@ -55,4 +57,19 @@ for w in 50 55 60 71 13 2002; do
     assert_exit_code 0
     assert_equal "$(check_with_bed_bt x.depth.bed test/windows.bed)" ""
     assert_equal "$(check_with_bed_bt x.callable.bed test/windows.bed)" ""
+    rm x.callable.bed x.depth.bed
 done
+
+
+run check_empty ./goleft depth --windowsize 10 --q 1 --mincov 4 --reference test/hg19.fa --processes 1 --stats --prefix x test/t-empty.bam
+assert_exit_code 0
+assert_equal "$(check_with_fai_bt test/hg19.fa.fai x.depth.bed)" ""
+assert_equal "$(check_with_fai_bt test/hg19.fa.fai x.callable.bed)" ""
+
+
+run check_empty_window ./goleft depth --bed test/windows.bed --windowsize 10 --q 1 --mincov 4 --reference test/hg19.fa --processes 1 --stats --prefix x test/t-empty.bam
+assert_exit_code 0
+assert_equal "$(check_with_bed_bt x.depth.bed test/windows.bed)" ""
+assert_equal "$(check_with_bed_bt x.callable.bed test/windows.bed)" ""
+
+echo "OK"
