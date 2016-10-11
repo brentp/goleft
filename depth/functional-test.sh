@@ -21,12 +21,15 @@ check_with_bed_bt() {
 export -f check_with_fai_bt
 
 
-run check_wgs ./goleft depth -Q 1 --ordered --windowsize 10 --stats --prefix x --reference test/hg19.fa test/t.bam
+run check_wgs ./goleft depth -Q 1 --ordered --windowsize 100 --stats --prefix x --reference test/hg19.fa test/t.bam
 
 assert_exit_code 0
 assert_equal "$(check_with_fai_bt test/hg19.fa.fai x.depth.bed)" ""
 assert_equal "$(check_with_fai_bt test/hg19.fa.fai x.callable.bed)" ""
 
+
+run compare_to_samtools_100 python test/cmp.py x.depth.bed test/t.bam
+assert_exit_code 0
 
 run check_wgs_big_window ./goleft depth -Q 1 --ordered --windowsize 1000000000 --stats --prefix x --reference test/hg19.fa test/t.bam
 assert_exit_code 0
@@ -57,8 +60,10 @@ for w in 50 55 60 71 13 2002; do
     assert_exit_code 0
     assert_equal "$(check_with_bed_bt x.depth.bed test/windows.bed)" ""
     assert_equal "$(check_with_bed_bt x.callable.bed test/windows.bed)" ""
-    rm x.callable.bed x.depth.bed
 done
+
+run compare_to_samtools_directly python test/cmp.py x.depth.bed test/t.bam
+assert_exit_code 0
 
 
 run check_empty ./goleft depth --windowsize 10 --q 1 --mincov 4 --reference test/hg19.fa --processes 1 --stats --prefix x test/t-empty.bam
@@ -72,4 +77,5 @@ assert_exit_code 0
 assert_equal "$(check_with_bed_bt x.depth.bed test/windows.bed)" ""
 assert_equal "$(check_with_bed_bt x.callable.bed test/windows.bed)" ""
 
-echo "OK"
+
+echo -e "\nFINISHED OK"
