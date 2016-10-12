@@ -19,6 +19,7 @@ check_with_bed_bt() {
     echo -e "$v"
 }
 export -f check_with_fai_bt
+export -f check_with_bed_bt
 
 
 run check_wgs ./goleft depth -Q 1 --ordered --windowsize 100 --stats --prefix x --reference test/hg19.fa test/t.bam

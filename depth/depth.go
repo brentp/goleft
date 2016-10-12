@@ -35,7 +35,7 @@ type dargs struct {
 	Reference    string `arg:"-r,required,help:path to reference fasta"`
 	Processes    int    `arg:"-p,help:number of processors to parallelize."`
 	Bed          string `arg:"-b,help:optional file of positions or regions to restrict depth calculations."`
-	Prefix       string `arg:"positional,required,help:prefix for output files depth.bed and callable.bed"`
+	Prefix       string `arg:"required,help:prefix for output files depth.bed and callable.bed"`
 	Bam          string `arg:"positional,required,help:bam for which to calculate depth"`
 }
 
