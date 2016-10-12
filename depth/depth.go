@@ -41,7 +41,7 @@ type dargs struct {
 
 // we echo the region first so the callback knows the full extents even if there is NOTE
 // coverage for part of it.
-const command = "echo %s; samtools depth -Q %d -d %d -r %s --reference %s %s"
+const command = "echo %s; samtools depth -Q %d -d %d -r %s %s"
 
 // this is the size in basepairs of the genomic chunks for parallelization.
 const step = 5000000
@@ -113,7 +113,7 @@ func genFromBed(ch chan string, args dargs) {
 		}
 		region := regionFromLine(line)
 		ch <- fmt.Sprintf(command, region, args.Q, args.MaxMeanDepth+1000,
-			region, args.Reference, args.Bam)
+			region, args.Bam)
 	}
 	close(ch)
 }
@@ -145,7 +145,7 @@ func genCommands(args dargs) chan string {
 			for i := 0; i < length; i += step {
 				region := fmt.Sprintf("%s:%d-%d", chrom, i, min(i+step, length))
 				ch <- fmt.Sprintf(command, region, args.Q, args.MaxMeanDepth+1000,
-					region, args.Reference, args.Bam)
+					region, args.Bam)
 			}
 		}
 		close(ch)
