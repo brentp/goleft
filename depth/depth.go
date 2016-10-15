@@ -44,7 +44,7 @@ type dargs struct {
 const command = "echo %s; samtools depth -Q %d -d %d -r %s %s"
 
 // this is the size in basepairs of the genomic chunks for parallelization.
-const step = 5000000
+const step = 10000000
 
 var exitCode = 0
 

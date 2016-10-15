@@ -3,7 +3,7 @@ depth
 
 depth parallelizes calls to [samtools](https://samtools.github.io) in user-defined windows.
 It outputs a bed file of callable regions (determined by mincov) and of depth (only windows
-with >= `maxmeandepth` are reported.
+with <= `maxmeandepth` are reported.
 
 ```
 usage: goleft depth [--windowsize WINDOWSIZE] [--maxmeandepth MAXMEANDEPTH] [--q Q] [--chrom CHROM] [--mincov MINCOV] [--stats] --reference REFERENCE [--processes PROCESSES] [--bed BED] [--prefix PREFIX] BAM
