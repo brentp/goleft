@@ -7,10 +7,11 @@ import (
 	"sort"
 	"strconv"
 
+	"github.com/brentp/goleft/covmed"
 	"github.com/brentp/goleft/depth"
 )
 
-const Version = "0.1.6"
+const Version = "0.1.7"
 
 type progPair struct {
 	help string
@@ -18,7 +19,8 @@ type progPair struct {
 }
 
 var progs = map[string]progPair{
-	"depth": progPair{"parallelize calls to samtools in user-defined windows", depth.Main},
+	"depth":  progPair{"parallelize calls to samtools in user-defined windows", depth.Main},
+	"covmed": progPair{"calculate median coverage on a bam by sampling", covmed.Main},
 }
 
 func printProgs() {

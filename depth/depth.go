@@ -27,7 +27,7 @@ import (
 type dargs struct {
 	WindowSize   int    `arg:"-w,help:window size in which to calculate high-depth regions"`
 	MaxMeanDepth int    `arg:"-m,help:windows with depth > than this are high-depth. The default reports the depth of all regions."`
-	Ordered      bool   `args:"-o,help:force output to be in same order as input even with -p."`
+	Ordered      bool   `arg:"-o,help:force output to be in same order as input even with -p."`
 	Q            int    `arg:"-Q,help:mapping quality cutoff"`
 	Chrom        string `arg:"-c,help:optional chromosome to limit analysis"`
 	MinCov       int    `arg:"help:minimum depth considered callable"`
