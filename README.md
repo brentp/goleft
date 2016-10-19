@@ -28,6 +28,11 @@ with a mapping quality (-Q) of 1 or greater. The output bed files
 will have 3 additional columns for the GC content, CpG content, and fraction
 of masked (lower-case) bases in the reference.
 
+
+### depthwed
+
+`depthwed` takes output from `depth` and makes a matrix -file of n-sites * n-samples
+
 ### covmed
 
 covmed calculates median coverage by reading the bam index and getting mean read length.
