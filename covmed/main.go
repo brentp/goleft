@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"os"
 	"sort"
 	"strconv"
@@ -48,6 +49,17 @@ func readCoverage(path string) int {
 	return cov
 }
 
+func meanStd(arr []int) (mean, std float64) {
+	l := float64(len(arr))
+	for _, a := range arr {
+		mean += float64(a) / l
+	}
+	for _, a := range arr {
+		std += math.Pow(float64(a)-mean, 2) / l
+	}
+	return mean, math.Sqrt(std)
+}
+
 // Main is called from the dispatcher
 func Main() {
 
@@ -87,22 +99,49 @@ func Main() {
 		genomeBases = readCoverage(cli.Regions)
 	}
 	// TODO: check that reads are from coverage regions.
+	insertSizes := make([]int, 0, cli.N)
+	templateLengths := make([]int, 0, cli.N)
 	for len(sizes) < cli.N {
 		rec, err := brdr.Read()
-		if rec.Flags&(sam.Secondary|sam.Supplementary|sam.Unmapped) != 0 {
-			continue
-		}
 		if err == io.EOF {
 			break
 		}
 		pcheck(err)
+		if rec.Flags&(sam.Secondary|sam.Supplementary|sam.Unmapped|sam.QCFail) != 0 {
+			continue
+		}
 		_, read := rec.Cigar.Lengths()
 		sizes = append(sizes, read)
+
+		if rec.Pos < rec.MatePos && rec.Flags&sam.ProperPair == sam.ProperPair && len(rec.Cigar) == 1 && rec.Cigar[0].Type() == sam.CigarMatch {
+			insertSizes = append(insertSizes, rec.MatePos-rec.End())
+			templateLengths = append(templateLengths, rec.TempLen)
+		}
+
 	}
+
+	for len(insertSizes) < cli.N {
+		rec, err := brdr.Read()
+		if err == io.EOF {
+			break
+		}
+		pcheck(err)
+		if rec.Flags&(sam.Secondary|sam.Supplementary|sam.Unmapped|sam.QCFail) != 0 {
+			continue
+		}
+		if rec.Pos < rec.MatePos && rec.Flags&sam.ProperPair == sam.ProperPair && len(rec.Cigar) == 1 && rec.Cigar[0].Type() == sam.CigarMatch {
+			insertSizes = append(insertSizes, rec.MatePos-rec.End())
+			templateLengths = append(templateLengths, rec.TempLen)
+		}
+	}
+
 	sort.Ints(sizes)
 
 	readSize := float64(sizes[(len(sizes)-1)/2]) - 1
 	coverage := float64(mapped) * readSize / float64(genomeBases)
 
-	fmt.Fprintf(os.Stdout, "%.2f\n", coverage)
+	isMean, isStd := meanStd(insertSizes)
+	tlMean, tlStd := meanStd(templateLengths)
+
+	fmt.Fprintf(os.Stdout, "%.2f\t%.2f\t%.2f\t%.2f\t%.2f\n", coverage, isMean, isStd, tlMean, tlStd)
 }

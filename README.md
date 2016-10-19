@@ -36,6 +36,8 @@ of masked (lower-case) bases in the reference.
 ### covmed
 
 covmed calculates median coverage by reading the bam index and getting mean read length.
+It outputs median coverage, mean insert-size, sd of insert-size, mean of template length, sd of template length
+to stdout.
 
 ##### Usage 
 
