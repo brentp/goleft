@@ -1,1 +1,5 @@
 *.png
+*.bed
+*_linux64
+*_osx
+*_darwin

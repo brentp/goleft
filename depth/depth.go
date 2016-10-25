@@ -112,7 +112,7 @@ func genFromBed(ch chan string, args dargs) {
 			continue
 		}
 		region := regionFromLine(line)
-		ch <- fmt.Sprintf(command, region, args.Q, args.MaxMeanDepth+1000,
+		ch <- fmt.Sprintf(command, region, args.Q, args.MaxMeanDepth+2500,
 			region, args.Bam)
 	}
 	close(ch)
@@ -144,7 +144,7 @@ func genCommands(args dargs) chan string {
 			pcheck(err)
 			for i := 0; i < length; i += step {
 				region := fmt.Sprintf("%s:%d-%d", chrom, i, min(i+step, length))
-				ch <- fmt.Sprintf(command, region, args.Q, args.MaxMeanDepth+1000,
+				ch <- fmt.Sprintf(command, region, args.Q, args.MaxMeanDepth+2500,
 					region, args.Bam)
 			}
 		}
@@ -173,16 +173,15 @@ type ipos struct {
 	start int
 }
 
-func mean(sl []int) float64 {
-	if len(sl) == 0 {
+func mean(sl []int, l int) float64 {
+	if len(sl) == 0 || l == 0 {
 		return 0
 	}
-	l := float64(len(sl))
 	avg := float64(0)
 	for _, v := range sl {
-		avg += float64(v) / l
+		avg += float64(v)
 	}
-	return avg
+	return avg / float64(l)
 }
 
 func getStats(fa *faidx.Faidx, chrom string, start, end int) string {
@@ -275,7 +274,7 @@ func run(args dargs) {
 						e := min(regionEnd, s+args.WindowSize)
 						stats := getStats(fa, chrom, s, e)
 						// only the 1st loop of this will have a value. others will have 0.
-						fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%.4g%s\n", chrom, st, e, mean(depthCache), stats))
+						fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%.4g%s\n", chrom, st, e, mean(depthCache, e-st), stats))
 						depthCache = depthCache[:0]
 					}
 				}
@@ -319,8 +318,10 @@ func run(args dargs) {
 				st := max(s, regionStart)
 				e := min(regionEnd, s+args.WindowSize)
 				stats := getStats(fa, chrom, st, e)
-				fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%.4g%s\n", chrom, st, e, mean(depthCache), stats))
-				//depthCache = depthCache[:0]
+				fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%.4g%s\n", chrom, st, e, mean(depthCache, e-st), stats))
+				depthCache = depthCache[:0]
+				// set position to end here so we don't output the same position below.
+				pos = e
 			}
 
 		}
@@ -333,12 +334,12 @@ func run(args dargs) {
 			} else {
 				fhCA.WriteString(fmt.Sprintf("%s\t%d\t%d\tNO_COVERAGE\n", chrom, regionStart, regionEnd))
 			}
-			for ds := max(regionStart, cache[1].start) / args.WindowSize * args.WindowSize; ds < regionEnd; ds += args.WindowSize {
+			for ds := max(regionStart, pos) / args.WindowSize * args.WindowSize; ds < regionEnd && pos < regionEnd; ds += args.WindowSize {
 				// keep de calc first.
 				de := min(regionEnd, ds+args.WindowSize)
 				s := max(ds, regionStart)
 				stats := getStats(fa, chrom, s, de)
-				fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%.4g%s\n", chrom, s, de, mean(depthCache), stats))
+				fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%.4g%s\n", chrom, s, de, mean(depthCache, de-s), stats))
 				depthCache = depthCache[:0]
 			}
 		}
