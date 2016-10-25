@@ -3,6 +3,7 @@ package depthwed
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"io"
 	"log"
@@ -104,12 +105,25 @@ func sFromLine(l string) depth {
 
 }
 
+func getNextChrom(r *bufio.Reader) string {
+	chromLine, _ := r.Peek(100)
+	var chrom string
+	if len(chromLine) > 0 {
+		chrom = string(chromLine[:bytes.Index(chromLine, []byte("\t"))])
+	}
+	return chrom
+}
+
 func next(beds []*xopen.Reader, size int) (depths []depth, eof bool) {
 	depths = make([]depth, len(beds))
 	eof = false
 	k := 0
+	// endSeen makes sure we only print the indivisible message once per chrom
+	endSeen := false
 
-	for !eof && depths[0].end-depths[0].start < size {
+	chrom := getNextChrom(beds[0].Reader)
+
+	for !eof && depths[0].end-depths[0].start < size && chrom == getNextChrom(beds[0].Reader) {
 
 		for i, bed := range beds {
 			line, err := bed.ReadString('\n')
@@ -124,8 +138,12 @@ func next(beds []*xopen.Reader, size int) (depths []depth, eof bool) {
 			}
 			if k == 0 {
 				depths[i] = sFromLine(line)
-				if size%(depths[i].end-depths[i].start) != 0 {
-					log.Fatalf("size %d disible by interval in line: %s", size, line)
+				if depths[i].chrom != chrom {
+					log.Fatalf("got unexpected chromosome from %s: %s", bed, depths[i].chrom)
+				}
+				if size%(depths[i].end-depths[i].start) != 0 && !endSeen {
+					endSeen = true
+					log.Printf("size %d indivisible by interval in line: %s likely chromosome change.", size, line)
 				}
 			} else {
 				tmp := sFromLine(line)
