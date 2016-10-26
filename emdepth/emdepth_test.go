@@ -19,4 +19,14 @@ func TestDepth(t *testing.T) {
 	if !reflect.DeepEqual(cns, exp) {
 		t.Errorf("expected: %v, got: %v", exp, cns)
 	}
+
+}
+func TestBig(t *testing.T) {
+	v := []float32{296.6, 16.7, 17.0, 319.2, 14.4, 16.5, 14.2}
+	cns := EMDepth(v)
+	exp := []int{8, 2, 2, 8, 2, 2, 2}
+
+	if !reflect.DeepEqual(cns, exp) {
+		t.Errorf("expected: %v, got: %v", exp, cns)
+	}
 }

@@ -52,8 +52,8 @@ func abs(a float64) float64 {
 }
 
 const maxCN = 8
-const delta = 0.1
-const maxiter = 20
+const delta = 0.01
+const maxiter = 10
 
 // used to test for convergence return the sum of abs differences
 // and the largest absolute difference.
@@ -103,7 +103,9 @@ func EMDepth(depths []float32) []int {
 	for iter := 0; iter < maxiter && sumd > delta && maxd > 0.5; iter++ {
 		for i := 1; i < len(centers); i++ {
 			lastCenters[i] = centers[i]
+			binned[i] = binned[i][:0]
 		}
+		binned[0] = binned[0][:0]
 		//fmt.Println(getCNs(depths, centers), centers)
 		// MAXIMIZATION
 		// put samples in the bin they are closest 2.
@@ -136,16 +138,24 @@ func EMDepth(depths []float32) []int {
 		// EXPECTATION:
 		// adjust copy-number 2 depth.
 		centers[2] = mean64(binned[2])
-		centers[0] = 0.005 * centers[2]
+		if centers[2] == 0 {
+			n := float64(len(depths))
+			for i := 1; i < len(centers); i++ {
+				bin := binned[i]
+				pdepth := float64(len(bin)) / n
+				centers[2] += mean64(bin) * (2 / float64(i)) * pdepth
+			}
+		}
+
 		for i := 1; i < len(centers); i++ {
 			// adjust the expected depths of other copy-numbers based on that from CN2.
 			centers[i] = centers[2] * (float64(i) / 2)
 		}
 		// make CN 2 more likely by expanding the range between CN1 and CN3.
-		centers[1] *= 1 / 1.3
-		centers[3] *= 1.3
+		span := centers[2] - centers[1]
+		centers[1] -= (span / 2)
+		centers[3] += (span / 2)
 		sumd, maxd = summaxdiff(centers, lastCenters)
-
 	}
 	return getCNs(depths, centers)
 }
