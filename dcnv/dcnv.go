@@ -27,6 +27,36 @@ type Interval struct {
 	Log2s          []float32
 	GC             float32
 	AdjustedDepths []float32
+	cns            []int
+}
+
+func (i *Interval) copy(cns []int) *Interval {
+	n := len(i.Depths)
+	c := &Interval{Chrom: i.Chrom, Start: i.Start, End: i.End, Depths: make([]float32, n),
+		Log2s: make([]float32, n), GC: i.GC, AdjustedDepths: make([]float32, n)}
+	for k := 0; k < n; k++ {
+		c.Log2s[k] = i.Log2s[k]
+		c.Depths[k] = i.Depths[k]
+		c.AdjustedDepths[k] = i.AdjustedDepths[k]
+	}
+	c.cns = cns
+	return c
+}
+
+// combine the data from 2 intervals.
+func (i *Interval) update(b *Interval) {
+	n := len(i.Depths)
+	ilen := float32(i.End - i.Start)
+	blen := float32(b.End - b.Start)
+	tot := ilen + blen
+	fmt.Fprintln(os.Stderr, "before:", i.AdjustedDepths, b.AdjustedDepths)
+	for k := 0; k < n; k++ {
+		i.Log2s[k] = (ilen*i.Log2s[k] + blen*b.Log2s[k]) / tot
+		i.Depths[k] = (ilen*i.Depths[k] + blen*b.Depths[k]) / tot
+		i.AdjustedDepths[k] = (ilen*i.AdjustedDepths[k] + blen*b.AdjustedDepths[k]) / tot
+	}
+	fmt.Fprintln(os.Stderr, "after:", i.AdjustedDepths)
+
 }
 
 // Intervals is the wrapper for a slice of intervals.
@@ -77,7 +107,7 @@ func intervalFromLine(l string, fa *faidx.Faidx) *Interval {
 	}
 	for c := 3; c < len(toks); c++ {
 		d := mustAtof(toks[c])
-		d /= float32(iv.End - iv.Start)
+		//d /= float32(iv.End - iv.Start)
 		//iv.Depths = uint32(d)
 		iv.Depths = append(iv.Depths, d)
 		if d == 0 {
@@ -142,7 +172,7 @@ func (ivs *Intervals) CorrectByGC(window int) {
 	}
 }
 
-// after sorting be GC, this is used to adjust log2s to subtract bias (subtract the median).
+// after sorting by GC, this is used to adjust log2s to subtract bias (subtract the median).
 func correctByMovingMedian(ivs *Intervals, window int, sampleI int) {
 	regions := ivs.Intervals
 	mm := movingmedian.NewMovingMedian(window)
@@ -154,12 +184,13 @@ func correctByMovingMedian(ivs *Intervals, window int, sampleI int) {
 	var i int
 	for i = 0; i < len(regions)-mid; i++ {
 		mm.Push(float64(regions[i+mid].Log2s[sampleI]))
+		before := regions[i].Log2s[sampleI]
 		regions[i].Log2s[sampleI] -= float32(mm.Median())
+		after := regions[i].Log2s[sampleI]
 	}
 	for ; i < len(regions); i++ {
 		regions[i].Log2s[sampleI] -= float32(mm.Median())
 	}
-
 }
 
 // mean without the lowest and highest values.
@@ -178,8 +209,8 @@ func mean(in []float32) float32 {
 
 		s += v
 	}
-	s -= (min + max)
-	return s / float32(len(in)-2)
+	//s -= (min + max)
+	return s / float32(len(in))
 }
 
 // all2 returns true if all values in the slice are == 2.
@@ -206,7 +237,24 @@ func all0(Depths []float32) bool {
 func (ivs *Intervals) CallCopyNumbers() {
 	ivs.SortByPosition()
 
+	formatCns := func(cns []int) string {
+		s := make([]string, 0, len(cns))
+		for _, c := range cns {
+			s = append(s, strconv.Itoa(c))
+		}
+		return strings.Join(s, "\t")
+	}
+	formatFloats := func(vs []float32) string {
+		s := make([]string, 0, len(vs))
+		for _, v := range vs {
+			s = append(s, fmt.Sprintf("%.1f", v))
+		}
+		return strings.Join(s, "\t")
+	}
+
 	r := ivs.Intervals
+	//cache := make([]*Intervals, 0, 8)
+	var last *Interval
 	for _, iv := range r {
 		if all0(iv.Depths) {
 			continue
@@ -216,8 +264,26 @@ func (ivs *Intervals) CallCopyNumbers() {
 		if all2(cns) {
 			continue
 		}
-		fmt.Fprintf(os.Stdout, "%s:%d-%d %v %v %v\n", iv.Chrom, iv.Start, iv.End, cns, iv.AdjustedDepths, iv.Depths)
+		if last == nil {
+			last = iv.copy(cns)
+		} else if last.End == iv.Start && allEqual(cns, last.cns) {
+			last.update(iv)
+		} else {
+			fmt.Fprintf(os.Stdout, "%s\t%d\t%d\t%s\t%s\n", last.Chrom, last.Start, last.End, formatCns(emdepth.EMDepth(last.AdjustedDepths)), formatFloats(last.AdjustedDepths))
+			last = iv.copy(cns)
+		}
 	}
+	fmt.Fprintf(os.Stdout, "%s\t%d\t%d\t%s\t%s\n", last.Chrom, last.Start, last.End, formatCns(emdepth.EMDepth(last.AdjustedDepths)), formatFloats(last.AdjustedDepths))
+	log.Println(len(r))
+}
+
+func allEqual(a, b []int) bool {
+	for i, v := range a {
+		if v != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func (ivs *Intervals) SortByPosition() {
@@ -254,10 +320,11 @@ func readRegions(path string, fasta string) *Intervals {
 
 func main() {
 
-	window := 11
+	window := 1
 	bed := os.Args[1]
 	fasta := os.Args[2]
 	ivs := readRegions(bed, fasta)
+	_ = window
 	ivs.CorrectBySampleMedian()
 	ivs.CorrectByGC(window)
 	ivs.SetAdjustedDepths()
