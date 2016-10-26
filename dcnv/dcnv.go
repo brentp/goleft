@@ -49,13 +49,11 @@ func (i *Interval) update(b *Interval) {
 	ilen := float32(i.End - i.Start)
 	blen := float32(b.End - b.Start)
 	tot := ilen + blen
-	fmt.Fprintln(os.Stderr, "before:", i.AdjustedDepths, b.AdjustedDepths)
 	for k := 0; k < n; k++ {
 		i.Log2s[k] = (ilen*i.Log2s[k] + blen*b.Log2s[k]) / tot
 		i.Depths[k] = (ilen*i.Depths[k] + blen*b.Depths[k]) / tot
 		i.AdjustedDepths[k] = (ilen*i.AdjustedDepths[k] + blen*b.AdjustedDepths[k]) / tot
 	}
-	fmt.Fprintln(os.Stderr, "after:", i.AdjustedDepths)
 
 }
 
@@ -184,9 +182,7 @@ func correctByMovingMedian(ivs *Intervals, window int, sampleI int) {
 	var i int
 	for i = 0; i < len(regions)-mid; i++ {
 		mm.Push(float64(regions[i+mid].Log2s[sampleI]))
-		before := regions[i].Log2s[sampleI]
 		regions[i].Log2s[sampleI] -= float32(mm.Median())
-		after := regions[i].Log2s[sampleI]
 	}
 	for ; i < len(regions); i++ {
 		regions[i].Log2s[sampleI] -= float32(mm.Median())
@@ -320,12 +316,13 @@ func readRegions(path string, fasta string) *Intervals {
 
 func main() {
 
-	window := 1
+	window := 5
 	bed := os.Args[1]
 	fasta := os.Args[2]
 	ivs := readRegions(bed, fasta)
 	_ = window
 	ivs.CorrectBySampleMedian()
+	// TODO: correct by Median across all samples
 	ivs.CorrectByGC(window)
 	ivs.SetAdjustedDepths()
 	ivs.CallCopyNumbers()
