@@ -14,8 +14,8 @@ import (
 
 	"github.com/JaderDias/movingmedian"
 	"github.com/brentp/faidx"
+	"github.com/brentp/goleft/emdepth"
 	"github.com/brentp/xopen"
-	stats "github.com/r0fls/gostats"
 )
 
 type interval struct {
@@ -168,20 +168,24 @@ func mean(in []float32) float32 {
 	return s / float32(len(in)-2)
 }
 
-func FindPoissonOutliers(r []*interval) {
-	for _, iv := range r {
-		m := mean(iv.adjustedDepth)
-		p := stats.Poisson(float64(m))
-		lo, hi := float32(p.Quantile(0.05)), float32(p.Quantile(0.95))
-		for _, d := range iv.adjustedDepth {
-			if d < lo || d > hi {
-				// TODO: store log2 value and merge with next interval if it has similar in same sample.
-				// actually can just save current interval and indexes of aberrant samples
-				// then output quantile, merged region, sample, CN estimate.
-				iv.out++
-			}
+// all2 returns true if all values in the slice are == 2.
+func all2(cns []int) bool {
+	for _, c := range cns {
+		if c != 2 {
+			return false
 		}
+	}
+	return true
+}
 
+// CallCopyNumbers returns intervals for which any sample has non-zero copy-number
+func CallCopyNumbers(r []*interval) {
+	for i, iv := range r {
+		cns := emdepth.EMDepth(iv.adjustedDepth)
+		if all2(cns) {
+			continue
+		}
+		fmt.Fprintln(os.Stderr, i, iv, cns)
 	}
 }
 
@@ -195,6 +199,7 @@ func readRegions(path string, fasta string) []*interval {
 	if err != nil {
 		log.Fatal(err)
 	}
+	i := 0
 	for {
 		line, err := rdr.ReadString('\n')
 		if err == io.EOF {
@@ -203,6 +208,10 @@ func readRegions(path string, fasta string) []*interval {
 		if err != nil {
 			log.Fatal(err)
 		}
+		if i == 0 && line[0] == '#' || strings.HasPrefix(line, "chrom") {
+			continue
+		}
+		i++
 		m = append(m, intervalFromLine(line, fai))
 	}
 	return m
@@ -211,10 +220,12 @@ func readRegions(path string, fasta string) []*interval {
 func main() {
 
 	window := 11
-	ivs := readRegions("", "")
+	bed := os.Args[1]
+	fasta := os.Args[2]
+	ivs := readRegions(bed, fasta)
 	CorrectBySampleMedian(ivs)
 	CorrectByGC(ivs, window)
 	SetAdjustedDepths(ivs)
-	FindPoissonOutliers(ivs)
+	CallCopyNumbers(ivs)
 
 }
