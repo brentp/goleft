@@ -7,7 +7,6 @@ import (
 	"math"
 	"math/rand"
 	"os"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -16,40 +15,35 @@ import (
 	"github.com/brentp/faidx"
 	"github.com/brentp/goleft/emdepth"
 	"github.com/brentp/xopen"
+	"go4.org/sort"
 )
 
-type interval struct {
-	chrom         string
-	start         uint32
-	end           uint32
-	depth         []float32
-	log2          []float32
-	GC            float32
-	adjustedDepth []float32
-	out           int
+// Interval is the struct used by dcnv
+type Interval struct {
+	Chrom          string
+	Start          uint32
+	End            uint32
+	Depths         []float32
+	Log2s          []float32
+	GC             float32
+	AdjustedDepths []float32
 }
 
-func (i *interval) setAdjusted() {
-	if len(i.adjustedDepth) == 0 {
-		i.adjustedDepth = make([]float32, len(i.depth))
-	}
-	for k, l2 := range i.log2 {
-		i.adjustedDepth[k] = float32(math.Pow(2, float64(l2)))
-	}
+// Intervals is the wrapper for a slice of intervals.
+type Intervals struct {
+	Intervals     []*Interval
+	sampleMedians []float32
 }
 
-func (i *interval) String() string {
-	s := fmt.Sprintf("%.1f", i.log2)
-	if len(s) < 4 {
-		s += " "
-	}
-	return s
+func (ivs Intervals) NSamples() int {
+	return len(ivs.Intervals[0].Depths)
 }
 
-func sortByGC(regions []*interval) {
+func sortByGC(regions []*Interval) {
 	sort.Slice(regions, func(i, j int) bool { return regions[i].GC < regions[j].GC })
 }
-func sortRandom(regions []*interval) {
+
+func sortRandom(regions []*Interval) {
 	t := time.Now()
 	rand.Seed(int64(t.Nanosecond()))
 	for i := range regions {
@@ -74,20 +68,25 @@ func mustAtof(a string) float32 {
 	return float32(v)
 }
 
-func intervalFromLine(l string, fa *faidx.Faidx) *interval {
+func intervalFromLine(l string, fa *faidx.Faidx) *Interval {
 	toks := strings.Split(l, "\t")
-	iv := &interval{chrom: toks[0], start: mustAtoi(toks[1]), end: mustAtoi(toks[2]),
-		depth: make([]float32, 0, len(toks)-3),
-		log2:  make([]float32, 0, len(toks)-3),
+	toks[len(toks)-1] = strings.TrimSpace(toks[len(toks)-1])
+	iv := &Interval{Chrom: toks[0], Start: mustAtoi(toks[1]), End: mustAtoi(toks[2]),
+		Depths: make([]float32, 0, len(toks)-3),
+		Log2s:  make([]float32, 0, len(toks)-3),
 	}
 	for c := 3; c < len(toks); c++ {
-		d := mustAtof(toks[3])
-		//d *= float32(iv.end - iv.start)
-		//iv.depth = uint32(d)
-		iv.depth = append(iv.depth, d)
-		iv.log2 = append(iv.log2, float32(math.Log2(float64(d))))
+		d := mustAtof(toks[c])
+		d /= float32(iv.End - iv.Start)
+		//iv.Depths = uint32(d)
+		iv.Depths = append(iv.Depths, d)
+		if d == 0 {
+			iv.Log2s = append(iv.Log2s, -math.MaxFloat32)
+		} else {
+			iv.Log2s = append(iv.Log2s, float32(math.Log2(float64(d))))
+		}
 	}
-	st, err := fa.Stats(iv.chrom, int(iv.start), int(iv.end))
+	st, err := fa.Stats(iv.Chrom, int(iv.Start), int(iv.End))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 	}
@@ -95,55 +94,70 @@ func intervalFromLine(l string, fa *faidx.Faidx) *interval {
 	return iv
 }
 
-func medianLog2BySample(regions []*interval, sampleI int) float32 {
-	sort.Slice(regions, func(i, j int) bool { return regions[i].log2[sampleI] < regions[j].log2[sampleI] })
-	return regions[len(regions)/2].log2[sampleI]
+// CalcSampleMedians sets the Median log2 values for each sample.
+func (ivs *Intervals) SampleMedians() []float32 {
+	regions := ivs.Intervals
+	if len(ivs.sampleMedians) == 0 {
+		ivs.sampleMedians = make([]float32, ivs.NSamples())
+		for sampleI := 0; sampleI < ivs.NSamples(); sampleI++ {
+			sort.Slice(regions, func(i, j int) bool { return regions[i].Log2s[sampleI] < regions[j].Log2s[sampleI] })
+			ivs.sampleMedians[sampleI] = regions[len(regions)/2].Log2s[sampleI]
+		}
+	}
+	return ivs.sampleMedians
 }
 
 // CorrectBySampleMedian subtracts the sample median from each sample.
-func CorrectBySampleMedian(regions []*interval) {
-	n := len(regions[0].depth)
-	for i := 0; i < n; i++ {
-		m := medianLog2BySample(regions, i)
-		for _, r := range regions {
-			r.log2[i] -= m
+func (ivs *Intervals) CorrectBySampleMedian() {
+	meds := ivs.SampleMedians()
+	for i := 0; i < ivs.NSamples(); i++ {
+		m := meds[i]
+		for _, r := range ivs.Intervals {
+			r.Log2s[i] -= m
 		}
 	}
 }
 
-// SetAdjustedDepths sets the adjustedDepth for each sample based on the log2.
-func SetAdjustedDepths(regions []*interval) {
-	for _, r := range regions {
-		r.setAdjusted()
+// SetAdjustedDepths sets the AdjustedDepths for each sample based on the log2.
+func (ivs Intervals) SetAdjustedDepths() {
+	meds := ivs.SampleMedians()
+	for _, i := range ivs.Intervals {
+		if len(i.AdjustedDepths) == 0 {
+			i.AdjustedDepths = make([]float32, len(i.Depths))
+		}
+		for k, l2 := range i.Log2s {
+			i.AdjustedDepths[k] = meds[k] + float32(math.Pow(2, float64(l2)))
+		}
 	}
 }
 
-// CorrectByGC sorts so that intervals with similar GC are grouped together
+// CorrectByGC sorts so that Intervals with similar GC are grouped together
 // and then docs a moving median correction on the log2 of the coverage.
-func CorrectByGC(regions []*interval, window int) {
+func (ivs *Intervals) CorrectByGC(window int) {
 	// sort random to make sure adjacent true sites are randomized away from each other.
-	sortRandom(regions)
-	sortByGC(regions)
-	for sampleI := 0; sampleI < len(regions[0].depth); sampleI++ {
-		correctByMovingMedian(regions, window, sampleI)
+	sortRandom(ivs.Intervals)
+	sortByGC(ivs.Intervals)
+	for sampleI := 0; sampleI < len(ivs.Intervals[0].Depths); sampleI++ {
+		correctByMovingMedian(ivs, window, sampleI)
 	}
 }
 
 // after sorting be GC, this is used to adjust log2s to subtract bias (subtract the median).
-func correctByMovingMedian(regions []*interval, window int, sampleI int) {
+func correctByMovingMedian(ivs *Intervals, window int, sampleI int) {
+	regions := ivs.Intervals
 	mm := movingmedian.NewMovingMedian(window)
 	mid := (window-1)/2 + 1
 	for i := 0; i < mid; i++ {
-		mm.Push(float64(regions[i].log2[sampleI]))
+		mm.Push(float64(regions[i].Log2s[sampleI]))
 	}
 
 	var i int
 	for i = 0; i < len(regions)-mid; i++ {
-		mm.Push(float64(regions[i+mid].log2[sampleI]))
-		regions[i].log2[sampleI] -= float32(mm.Median())
+		mm.Push(float64(regions[i+mid].Log2s[sampleI]))
+		regions[i].Log2s[sampleI] -= float32(mm.Median())
 	}
 	for ; i < len(regions); i++ {
-		regions[i].log2[sampleI] -= float32(mm.Median())
+		regions[i].Log2s[sampleI] -= float32(mm.Median())
 	}
 
 }
@@ -178,23 +192,44 @@ func all2(cns []int) bool {
 	return true
 }
 
-// CallCopyNumbers returns intervals for which any sample has non-zero copy-number
-func CallCopyNumbers(r []*interval) {
-	for i, iv := range r {
-		cns := emdepth.EMDepth(iv.adjustedDepth)
+// all2 returns true if all values in the slice are == 2.
+func all0(Depths []float32) bool {
+	for _, d := range Depths {
+		if d != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+// CallCopyNumbers returns Intervals for which any sample has non-zero copy-number
+func (ivs *Intervals) CallCopyNumbers() {
+	ivs.SortByPosition()
+
+	r := ivs.Intervals
+	for _, iv := range r {
+		if all0(iv.Depths) {
+			continue
+		}
+
+		cns := emdepth.EMDepth(iv.AdjustedDepths)
 		if all2(cns) {
 			continue
 		}
-		fmt.Fprintln(os.Stderr, i, iv, cns)
+		fmt.Fprintf(os.Stdout, "%s:%d-%d %v %v %v\n", iv.Chrom, iv.Start, iv.End, cns, iv.AdjustedDepths, iv.Depths)
 	}
 }
 
-func readRegions(path string, fasta string) []*interval {
+func (ivs *Intervals) SortByPosition() {
+	sort.Slice(ivs.Intervals, func(i, j int) bool { return ivs.Intervals[i].Start < ivs.Intervals[j].Start })
+}
+
+func readRegions(path string, fasta string) *Intervals {
 	fai, err := faidx.New(fasta)
 	if err != nil {
 		log.Fatal(err)
 	}
-	m := make([]*interval, 0, 100000)
+	m := make([]*Interval, 0, 100000)
 	rdr, err := xopen.Ropen(path)
 	if err != nil {
 		log.Fatal(err)
@@ -214,7 +249,7 @@ func readRegions(path string, fasta string) []*interval {
 		i++
 		m = append(m, intervalFromLine(line, fai))
 	}
-	return m
+	return &Intervals{Intervals: m}
 }
 
 func main() {
@@ -223,9 +258,9 @@ func main() {
 	bed := os.Args[1]
 	fasta := os.Args[2]
 	ivs := readRegions(bed, fasta)
-	CorrectBySampleMedian(ivs)
-	CorrectByGC(ivs, window)
-	SetAdjustedDepths(ivs)
-	CallCopyNumbers(ivs)
+	ivs.CorrectBySampleMedian()
+	ivs.CorrectByGC(window)
+	ivs.SetAdjustedDepths()
+	ivs.CallCopyNumbers()
 
 }
