@@ -37,7 +37,7 @@ func Main() {
 func getNameFromFile(f string) string {
 	tmp := strings.Split(f, "/")
 	tmpn := tmp[len(tmp)-1]
-	for _, suff := range []string{".gz", ".bed"} {
+	for _, suff := range []string{".gz", ".bed", ".depth"} {
 		if strings.HasSuffix(tmpn, suff) {
 			tmpn = tmpn[:len(tmpn)-len(suff)]
 		}
