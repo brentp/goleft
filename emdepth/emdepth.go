@@ -8,6 +8,8 @@
 package emdepth
 
 import (
+	"fmt"
+	"log"
 	"math"
 	"sort"
 
@@ -51,8 +53,15 @@ func abs(a float64) float64 {
 	return a
 }
 
+func abs32(a float32) float32 {
+	if a < 0 {
+		return -a
+	}
+	return a
+}
+
 const maxCN = 8
-const delta = 0.01
+const delta = 0.001
 const maxiter = 10
 
 // used to test for convergence return the sum of abs differences
@@ -69,16 +78,118 @@ func summaxdiff(a, b []float64) (float64, float64) {
 	return sum, m
 }
 
+const eps = 0.001
+
+func pmf(k int, em, pmean float64) float64 {
+	return math.Pow(pmean, float64(k)) * em / math.Gamma(float64(k+1))
+}
+
+// top right of eqn 5.
+func pdepth(depths []float32, cn int, lambda float32) []float32 {
+	// i indexes copy-number, k indexes sample
+	beta := float64(cn) / 2 * float64(lambda)
+	if cn == 0 {
+		beta = 0.1 / 2 * float64(lambda)
+	}
+	em := math.Exp(-beta)
+	ps := make([]float32, len(depths))
+	for k, d := range depths {
+		ps[k] = float32(pmf(int(d+0.5), em, beta))
+	}
+	return ps
+}
+
+// returns a square alpha ik.
+func estep(alpha []float32, depths []float32, lambda float32, aik [][]float32) [][]float32 {
+	// i index copy-number, k indexes sample
+	// N is number of samples.
+	if len(aik) == 0 {
+		// best-to-reuse as this can take a lot of memory.
+		aik = make([][]float32, len(alpha))
+	}
+	em := math.Exp(float64(-lambda))
+
+	denom := make([]float32, len(depths))
+	// calculte prob for cn 2.
+	for k, d := range depths {
+		denom[k] = float32(pmf(int(d+0.5), em, float64(lambda)))
+	}
+
+	// calculate prob for other cns.
+	for cn := range alpha {
+		aik[cn] = pdepth(depths, cn, lambda)
+		log.Println(cn, aik[cn])
+		// eqn 5 from cn.mops.
+		for k, ad := range aik[cn] {
+			aik[cn][k] = alpha[cn] * ad / denom[k]
+		}
+	}
+	return aik
+}
+
+func mstep(depths []float32, adepths [][]float32) (alpha []float32, lambda float32) {
+	alpha = make([]float32, len(adepths))
+	N := float32(len(adepths[0]))
+	// eqn 6, 7
+	G := 6
+	var lambdaDenom float32
+	for cn, ai := range adepths {
+		yi := float32(1)
+		if cn == 2 {
+			yi += float32(G)
+		}
+		amean := mean32(ai)
+		v := amean + 1/float32(N)*(yi-1)
+		alpha[cn] = v / (1 + 1/N*float32(len(alpha)+G))
+
+		// eqn 7
+		if cn == 0 {
+			lambdaDenom += amean * eps / 2
+		} else {
+			lambdaDenom += amean * float32(cn) / 2
+		}
+
+	}
+	return alpha, mean32(depths) / lambdaDenom
+}
+
+func Mops(depths []float32) []int {
+	// alpha[i] is percentage of samples with CNi
+	// lambda is mean read-count for CN2
+	// x is depth
+	// p(x|i) is likely that read-count x is from CNi == 1/x! * e^-(i/2 * lambda) * i/2*lambda
+	alpha := make([]float32, maxCN)
+	for i := 0; i < len(alpha); i++ {
+		alpha[i] = eps
+	}
+	alpha[2] = 1.0 - eps*float32(len(alpha)-1)
+	nlambda := mean32(depths)
+	lambda := float32(math.MaxFloat32) / 10.0
+	var aik [][]float32
+
+	for n := 0; abs32(lambda-nlambda) > 0.01 && n < 10; n++ {
+		lambda = nlambda
+		log.Println(lambda, alpha)
+		aik = estep(alpha, depths, lambda, aik)
+		alpha, nlambda = mstep(depths, aik)
+	}
+	fmt.Println(lambda, nlambda)
+	log.Println(aik)
+	log.Println(aik[5])
+	return []int{}
+}
+
 // EMDepth returns a slice of integer copy-numbers (CNs) corresponding to the given normalized
 // depths. It uses a simple EM to assign depths to copy-numbers bins with a preference for CN 2.
 // And to adjust the mean depth of each bin after each iteration.
 func EMDepth(depths []float32) []int {
 
 	m := float64(mean32(depths))
-	centers := make([]float64, maxCN)
+	// lambda are the centers of each CN
+	lambda := make([]float64, maxCN)
 	// put each sample into the bin they belong to.
 	binned := make([][]float64, maxCN)
-	for i := 0; i < len(centers); i++ {
+	for i := 0; i < len(lambda); i++ {
 		if i == 2 {
 			binned[i] = make([]float64, 0, len(depths))
 		} else {
@@ -87,22 +198,22 @@ func EMDepth(depths []float32) []int {
 	}
 
 	// keep lastCenters to check for convergence.
-	lastCenters := make([]float64, len(centers))
+	lastCenters := make([]float64, len(lambda))
 
-	centers[0] = 0.005 * m
-	centers[2] = m
-	lastCenters[0] = centers[0]
+	lambda[0] = eps * m
+	lambda[2] = m
+	lastCenters[0] = lambda[0]
 	// EXPECTATION:
 	// initialize centers of each bin relative to copy-number 2.
-	for i := 1; i < len(centers); i++ {
-		centers[i] = centers[2] * (float64(i) / 2)
+	for i := 1; i < len(lambda); i++ {
+		lambda[i] = lambda[2] * (float64(i) / 2)
 	}
 	// iterate at most maxiter times. stop early if the largest depth change
 	// from 1 iter to the next is < 0.5 or if the total of all changes is < delta.
 	sumd, maxd := float64(100), float64(100)
 	for iter := 0; iter < maxiter && sumd > delta && maxd > 0.5; iter++ {
-		for i := 1; i < len(centers); i++ {
-			lastCenters[i] = centers[i]
+		for i := 1; i < len(lambda); i++ {
+			lastCenters[i] = lambda[i]
 			binned[i] = binned[i][:0]
 		}
 		binned[0] = binned[0][:0]
@@ -112,23 +223,23 @@ func EMDepth(depths []float32) []int {
 		for _, df := range depths {
 			d := float64(df)
 			// most common case of copy-number 2.
-			if d > centers[1] && d < centers[3] {
-				if abs(d-centers[2]) < abs(d-centers[1]) && abs(d-centers[2]) < abs(d-centers[3]) {
+			if d > lambda[1] && d < lambda[3] {
+				if abs(d-lambda[2]) < abs(d-lambda[1]) && abs(d-lambda[2]) < abs(d-lambda[3]) {
 					binned[2] = append(binned[2], d)
 					continue
 				}
 			}
-			idx := sort.SearchFloat64s(centers, d)
+			idx := sort.SearchFloat64s(lambda, d)
 			if idx == 0 {
 				binned[0] = append(binned[0], d)
 				continue
 			}
-			if idx == len(centers) {
+			if idx == len(lambda) {
 				binned[idx-1] = append(binned[idx-1], d)
 				continue
 			}
 			// idx will always be the index of the value >= d so we check if idx or idx-1 is better.
-			if abs(d-centers[idx]) < abs(d-centers[idx-1]) {
+			if abs(d-lambda[idx]) < abs(d-lambda[idx-1]) {
 				binned[idx] = append(binned[idx], d)
 			} else {
 				binned[idx-1] = append(binned[idx-1], d)
@@ -137,27 +248,42 @@ func EMDepth(depths []float32) []int {
 
 		// EXPECTATION:
 		// adjust copy-number 2 depth.
-		centers[2] = mean64(binned[2])
-		if centers[2] == 0 {
+		lambda[2] = mean64(binned[2])
+		if lambda[2] == 0 {
 			n := float64(len(depths))
-			for i := 1; i < len(centers); i++ {
+			for i := 1; i < len(lambda); i++ {
 				bin := binned[i]
 				pdepth := float64(len(bin)) / n
-				centers[2] += mean64(bin) * (2 / float64(i)) * pdepth
+				lambda[2] += mean64(bin) * (2 / float64(i)) * pdepth
 			}
 		}
 
-		for i := 1; i < len(centers); i++ {
+		for i := 1; i < len(lambda); i++ {
 			// adjust the expected depths of other copy-numbers based on that from CN2.
-			centers[i] = centers[2] * (float64(i) / 2)
+			lambda[i] = lambda[2] * (float64(i) / 2)
 		}
 		// make CN 2 more likely by expanding the range between CN1 and CN3.
-		span := centers[2] - centers[1]
-		centers[1] -= (span / 2)
-		centers[3] += (span / 2)
-		sumd, maxd = summaxdiff(centers, lastCenters)
+		span := lambda[2] - lambda[1]
+		lambda[1] -= (span / 2)
+		lambda[3] += (span / 2)
+		sumd, maxd = summaxdiff(lambda, lastCenters)
 	}
-	return getCNs(depths, centers)
+	return getCNs(depths, lambda)
+}
+
+func CNINI(cns []int, depths []float32, centers []float64) float32 {
+	var in float32
+	for i, cni := range cns {
+		if cni == 0 {
+			continue
+		}
+		v := float32(i)
+		if v == 0 {
+			v = eps
+		}
+		in += float32(cni) / float32(abs(math.Log(float64(v/2))))
+	}
+	return in
 }
 
 func distp5(v float64) float64 {
@@ -206,5 +332,6 @@ func getCNs(depths []float32, centers []float64) []int {
 		}
 
 	}
-	return adjustCNs(cns, depths, centers)
+	cns = adjustCNs(cns, depths, centers)
+	return cns
 }
