@@ -7,6 +7,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -32,13 +33,13 @@ type Interval struct {
 func (i *Interval) copy(cns []int) *Interval {
 	n := len(i.Depths)
 	c := &Interval{Start: i.Start, End: i.End, Depths: make([]float32, n),
+		cns:   cns,
 		Log2s: make([]float32, n), GC: i.GC, AdjustedDepths: make([]float32, n)}
 	for k := 0; k < n; k++ {
 		c.Log2s[k] = i.Log2s[k]
 		c.Depths[k] = i.Depths[k]
 		c.AdjustedDepths[k] = i.AdjustedDepths[k]
 	}
-	c.cns = cns
 	return c
 }
 
@@ -62,6 +63,11 @@ type Intervals struct {
 	Intervals     []*Interval
 	sampleMedians []float32
 	SampleScalars []float32
+	samples       []string
+}
+
+func (ivs Intervals) Samples() []string {
+	return ivs.samples
 }
 
 func (ivs Intervals) NSamples() int {
@@ -107,10 +113,10 @@ func intervalFromLine(l string, fa *faidx.Faidx) *Interval {
 	}
 	for c := 3; c < len(toks); c++ {
 		d := mustAtof(toks[c])
-		//d /= float32(iv.End - iv.Start)
+		d /= float32(iv.End - iv.Start)
 		iv.Depths = append(iv.Depths, d)
 		if d == 0 {
-			iv.Log2s = append(iv.Log2s, -math.MaxFloat32/10000)
+			iv.Log2s = append(iv.Log2s, -math.MaxFloat32/100)
 		} else {
 			iv.Log2s = append(iv.Log2s, float32(math.Log2(float64(d))))
 		}
@@ -127,12 +133,16 @@ func intervalFromLine(l string, fa *faidx.Faidx) *Interval {
 func (ivs *Intervals) SampleMedians() []float32 {
 	if len(ivs.sampleMedians) == 0 {
 		regions := ivs.Intervals
+		depths := make([]float32, len(regions))
 		ivs.sampleMedians = make([]float32, ivs.NSamples())
 		for sampleI := 0; sampleI < ivs.NSamples(); sampleI++ {
-			sort.Slice(regions, func(i, j int) bool { return regions[i].Depths[sampleI] < regions[j].Depths[sampleI] })
-			ivs.sampleMedians[sampleI] = regions[len(regions)/2].Depths[sampleI]
+			// sorting the extracted array is much faster.
+			for di, d := range regions {
+				depths[di] = d.Depths[sampleI]
+			}
+			sort.Slice(depths, func(i, j int) bool { return depths[i] < depths[j] })
+			ivs.sampleMedians[sampleI] = depths[len(depths)/2]
 		}
-
 		med := median(ivs.sampleMedians)
 		ivs.SampleScalars = make([]float32, 0, len(ivs.sampleMedians))
 		for _, sm := range ivs.sampleMedians {
@@ -150,7 +160,7 @@ func (ivs *Intervals) CorrectBySampleMedian() {
 			// check for underflow
 			tmp := r.Log2s[i] - l2m
 			if tmp > r.Log2s[i] {
-				log.Fatal(r.Log2s[i], l2m)
+				log.Fatal("underflow:", r.Log2s[i], l2m, m)
 			}
 			r.Log2s[i] = tmp
 		}
@@ -257,27 +267,28 @@ func all0(Depths []float32) bool {
 // CallCopyNumbers returns Intervals for which any sample has non-zero copy-number
 func (ivs *Intervals) CallCopyNumbers() {
 	ivs.SortByPosition()
+	n := ivs.NSamples()
+	samples := ivs.Samples()
 
-	formatCns := func(cns []int) string {
-		s := make([]string, 0, len(cns))
-		for _, c := range cns {
-			s = append(s, strconv.Itoa(c))
+	fs := make([]string, n)
+	formatIV := func(i *Interval) string {
+		cns := emdepth.EMDepth(i.AdjustedDepths)
+		for k := 0; k < n; k++ {
+			fs[k] = fmt.Sprintf("%s:%.0f:%.0f:%d", samples[k], i.Depths[k], i.AdjustedDepths[k], cns[k])
 		}
-		return strings.Join(s, "\t")
+		return strings.Join(fs, "\t")
 	}
-	formatFloats := func(vs []float32) string {
-		s := make([]string, 0, len(vs))
-		for _, v := range vs {
-			s = append(s, fmt.Sprintf("%.0f", v))
-		}
-		return strings.Join(s, ",")
-	}
+	log.Println("writing")
+	runtime.GC()
 
-	r := ivs.Intervals
 	//cache := make([]*Intervals, 0, 8)
 	var last *Interval
-	for _, iv := range r {
+	for _, iv := range ivs.Intervals {
+		//fmt.Fprintf(os.Stdout, "%s\t%d\t%d\t%s\n", ivs.Chrom, iv.Start, iv.End, formatIV(iv))
 		if all0(iv.Depths) {
+			continue
+		}
+		if mean(iv.Depths) < 5 {
 			continue
 		}
 
@@ -290,13 +301,13 @@ func (ivs *Intervals) CallCopyNumbers() {
 		} else if last.End == iv.Start && allEqual(cns, last.cns) {
 			last.update(iv)
 		} else {
-			if last.End < iv.Start || !all2(emdepth.EMDepth(iv.AdjustedDepths)) {
-				fmt.Fprintf(os.Stdout, "%s\t%d\t%d\t%s\t%s\t%s\n", ivs.Chrom, last.Start, last.End, formatCns(emdepth.EMDepth(last.AdjustedDepths)), formatFloats(last.Depths), formatFloats(last.AdjustedDepths))
+			if last.End < iv.Start || !all2(emdepth.EMDepth(last.AdjustedDepths)) {
+				fmt.Fprintf(os.Stdout, "%s\t%d\t%d\t%s\n", ivs.Chrom, last.Start, last.End, formatIV(last))
 			}
 			last = iv.copy(cns)
 		}
 	}
-	fmt.Fprintf(os.Stdout, "%s\t%d\t%d\t%s\t%s\n", ivs.Chrom, last.Start, last.End, formatCns(emdepth.EMDepth(last.AdjustedDepths)), formatFloats(last.AdjustedDepths))
+	//fmt.Fprintf(os.Stdout, "%s\t%d\t%d\t%s\t%s\n", ivs.Chrom, last.Start, last.End, formatCns(emdepth.EMDepth(last.AdjustedDepths)), formatFloats(last.AdjustedDepths))
 }
 
 func allEqual(a, b []int) bool {
@@ -312,40 +323,42 @@ func (ivs *Intervals) SortByPosition() {
 	sort.Slice(ivs.Intervals, func(i, j int) bool { return ivs.Intervals[i].Start < ivs.Intervals[j].Start })
 }
 
-func readRegions(path string, fasta string) *Intervals {
+func (ivs *Intervals) ReadRegions(path string, fasta string) {
 	fai, err := faidx.New(fasta)
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
 	m := make([]*Interval, 0, 100000)
 	rdr, err := xopen.Ropen(path)
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
 	i := 0
-	var chrom string
 	for {
 		line, err := rdr.ReadString('\n')
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			log.Fatal(err)
+			panic(err)
 		}
 		if i == 0 && (line[0] == '#' || strings.HasPrefix(line, "chrom")) {
+			ivs.samples = strings.Split(strings.TrimSpace(line), "\t")[3:]
 			continue
 		}
 		if i == 0 || i == 1 {
-			chrom = string(line[:strings.Index(line, "\t")])
+			ivs.Chrom = string(line[:strings.Index(line, "\t")])
 		}
 		i++
 		iv := intervalFromLine(line, fai)
-		if all0(iv.Depths) {
-			continue
-		}
+		/*
+			if all0(iv.Depths) {
+				continue
+			}
+		*/
 		m = append(m, iv)
 	}
-	return &Intervals{Intervals: m, Chrom: chrom}
+	ivs.Intervals = m
 }
 
 func (ivs *Intervals) Write(n int) {
@@ -354,12 +367,12 @@ func (ivs *Intervals) Write(n int) {
 	for i, v := range meds {
 		lmeds[i] = float32(math.Log2(float64(v)))
 	}
+	_s := make([]string, len(ivs.Intervals[0].Depths))
 	formatIV := func(i *Interval) string {
-		s := make([]string, len(i.Depths))
-		for k := 0; k < len(s); k++ {
-			s[k] = fmt.Sprintf("%.0f:%.1f:%.3g:%.1f", i.Depths[k], float32(math.Pow(2, float64(lmeds[k]+i.Log2s[k]))), i.Log2s[k], i.AdjustedDepths[k])
+		for k := 0; k < len(_s); k++ {
+			_s[k] = fmt.Sprintf("%.0f:%.1f:%.1g:%.1f", i.Depths[k], float32(math.Pow(2, float64(lmeds[k]+i.Log2s[k]))), i.Log2s[k], i.AdjustedDepths[k])
 		}
-		return strings.Join(s, "\t")
+		return strings.Join(_s, "\t")
 	}
 	ivs.SortByPosition()
 	for i, iv := range ivs.Intervals {
@@ -372,12 +385,24 @@ func (ivs *Intervals) Write(n int) {
 
 func main() {
 
-	window := 5
+	/*
+		f, err := os.Create("dcnv.cpu.pprof")
+		if err != nil {
+			panic(err)
+		}
+		pprof.StartCPUProfile(f)
+		defer pprof.StopCPUProfile()
+	*/
+
+	window := 15
 	_ = window
 	bed := os.Args[1]
 	fasta := os.Args[2]
-	ivs := readRegions(bed, fasta)
-	fmt.Println(ivs.SampleMedians())
+	ivs := &Intervals{}
+	ivs.ReadRegions(bed, fasta)
+	fmt.Fprintln(os.Stderr, ivs.Samples())
+	fmt.Fprintln(os.Stderr, ivs.SampleMedians())
+	fmt.Fprintln(os.Stderr, ivs.SampleScalars)
 
 	ivs.CorrectBySampleMedian()
 	//ivs.Write(10)
@@ -387,10 +412,11 @@ func main() {
 
 	// this correct by median of all samples.
 	ivs.SetAdjustedDepths()
-	//fmt.Println("\n\n")
+	//fmt.Println("\n")
 	//ivs.Write(10)
 	//os.Exit(1)
 
+	log.Println("writing")
 	ivs.CallCopyNumbers()
 
 }
