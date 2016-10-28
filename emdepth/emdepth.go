@@ -9,8 +9,7 @@ package emdepth
 
 import (
 	"sort"
-
-	stats "github.com/r0fls/gostats"
+	"sync"
 )
 
 // mean of all except highest and lowest values.
@@ -48,8 +47,8 @@ func abs32(a float32) float32 {
 }
 
 const maxCN = 8
-const delta = 0.001
 const maxiter = 10
+const eps = 0.001
 
 // used to test for convergence return the sum of abs differences
 // and the largest absolute difference.
@@ -65,7 +64,25 @@ func summaxdiff(a, b []float64) (float64, float64) {
 	return sum, m
 }
 
-const eps = 0.001
+func getBins(nSamples int) [][]float64 {
+	binned := make([][]float64, maxCN)
+	for i := 0; i < maxCN; i++ {
+		if i == 2 {
+			binned[i] = make([]float64, 0, nSamples)
+		} else {
+			binned[i] = make([]float64, 0)
+		}
+	}
+	return binned
+}
+
+var binPool *sync.Pool
+
+func init() {
+	binPool = &sync.Pool{New: func() interface{} {
+		return getBins(32)
+	}}
+}
 
 // EMDepth returns a slice of integer copy-numbers (CNs) corresponding to the given normalized
 // depths. It uses a simple EM to assign depths to copy-numbers bins with a preference for CN 2.
@@ -76,14 +93,8 @@ func EMDepth(depths []float32) []int {
 	// lambda are the centers of each CN
 	lambda := make([]float64, maxCN)
 	// put each sample into the bin they belong to.
-	binned := make([][]float64, maxCN)
-	for i := 0; i < len(lambda); i++ {
-		if i == 2 {
-			binned[i] = make([]float64, 0, len(depths))
-		} else {
-			binned[i] = make([]float64, 0)
-		}
-	}
+	// we re-use these since they can take a lot of mem.
+	binned := binPool.Get().([][]float64)
 
 	// keep lastCenters to check for convergence.
 	lastCenters := make([]float64, len(lambda))
@@ -100,7 +111,7 @@ func EMDepth(depths []float32) []int {
 	// iterate at most maxiter times. stop early if the largest depth change
 	// from 1 iter to the next is < 0.5 or if the total of all changes is < delta.
 	sumd, maxd := float64(100), float64(100)
-	for iter := 0; iter < maxiter && sumd > delta && maxd > 0.5; iter++ {
+	for iter := 0; iter < maxiter && sumd > eps && maxd > 0.5; iter++ {
 		for i := 1; i < len(lambda); i++ {
 			lastCenters[i] = lambda[i]
 			binned[i] = binned[i][:0]
@@ -161,6 +172,7 @@ func EMDepth(depths []float32) []int {
 		lambda[3] += (span / 2)
 		sumd, maxd = summaxdiff(lambda, lastCenters)
 	}
+	binPool.Put(binned)
 	return getCNs(depths, lambda)
 }
 
@@ -176,12 +188,9 @@ func adjustCNs(cns []int, depths []float32, centers []float64) []int {
 
 	for i, cn := range cns {
 		if cn == 1 || cn == 3 {
-			p := stats.Poisson(float64(centers[cn])).Cdf(int(0.5 + depths[i]))
-			p2 := stats.Poisson(float64(centers[2])).Cdf(int(0.5 + depths[i]))
-			d := distp5(p)
-			d2 := distp5(p2)
-			// TODO: make this a parameter.
-			if d2-0.05 < d {
+			dk := int(0.5 + depths[i])
+			o, o2 := pmf(dk, centers[cn]), pmf(dk, centers[2])
+			if o*0.95 < o2 {
 				cns[i] = 2
 			}
 		}

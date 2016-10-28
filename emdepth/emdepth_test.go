@@ -34,6 +34,7 @@ func TestBig(t *testing.T) {
 
 func BenchmarkEMDepth(b *testing.B) {
 	v := []float32{296.6, 16.7, 17.0, 319.2, 14.4, 16.5, 14.2, 22, 33, 44, 66, 22, 33, 11, 15, 18, 22, 22, 44, 31, 22, 66, 22, 21, 23, 16, 17, 19}
+	v = append(v, v...)
 
 	s := 0
 	for i := 0; i < b.N; i++ {
