@@ -32,7 +32,13 @@ func TestBig(t *testing.T) {
 	}
 }
 
-func TestMops(t *testing.T) {
-	v := []float32{93, 34, 33, 34, 35, 37, 33, 36, 32}
-	_ = Mops(v)
+func BenchmarkEMDepth(b *testing.B) {
+	v := []float32{296.6, 16.7, 17.0, 319.2, 14.4, 16.5, 14.2, 22, 33, 44, 66, 22, 33, 11, 15, 18, 22, 22, 44, 31, 22, 66, 22, 21, 23, 16, 17, 19}
+
+	s := 0
+	for i := 0; i < b.N; i++ {
+		cns := EMDepth(v)
+		s += len(cns)
+	}
+
 }
