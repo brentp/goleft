@@ -7,7 +7,6 @@ import (
 	"math"
 	"math/rand"
 	"os"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -267,47 +266,54 @@ func all0(Depths []float32) bool {
 // CallCopyNumbers returns Intervals for which any sample has non-zero copy-number
 func (ivs *Intervals) CallCopyNumbers() {
 	ivs.SortByPosition()
-	n := ivs.NSamples()
 	samples := ivs.Samples()
 
-	fs := make([]string, n)
-	formatIV := func(i *Interval) string {
-		cns := emdepth.EMDepth(i.AdjustedDepths)
-		for k := 0; k < n; k++ {
-			fs[k] = fmt.Sprintf("%s:%.0f:%.0f:%d", samples[k], i.Depths[k], i.AdjustedDepths[k], cns[k])
-		}
-		return strings.Join(fs, "\t")
-	}
-	log.Println("writing")
-	runtime.GC()
-
-	//cache := make([]*Intervals, 0, 8)
-	var last *Interval
+	cache := &emdepth.Cache{}
 	for _, iv := range ivs.Intervals {
 		//fmt.Fprintf(os.Stdout, "%s\t%d\t%d\t%s\n", ivs.Chrom, iv.Start, iv.End, formatIV(iv))
 		if all0(iv.Depths) {
 			continue
 		}
-		if mean(iv.Depths) < 5 {
+		if mean(iv.Depths) < 15 {
 			continue
 		}
 
-		cns := emdepth.EMDepth(iv.AdjustedDepths)
-		if all2(cns) {
+		em := emdepth.EMDepth(iv.AdjustedDepths, emdepth.Position{Start: iv.Start, End: iv.End})
+		cnvs := cache.Add(em)
+		ivs.printCNVs(cnvs, samples)
+	}
+
+	ivs.printCNVs(cache.Clear(nil), samples)
+
+	//fmt.Fprintf(os.Stdout, "%s\t%d\t%d\t%s\t%s\n", ivs.Chrom, last.Start, last.End, formatCns(emdepth.EMDepth(last.AdjustedDepths)), formatFloats(last.AdjustedDepths))
+}
+
+func (ivs *Intervals) printCNVs(cnvs []*emdepth.CNV, samples []string) {
+	fs := make([]string, 0, len(samples))
+	fjoin := func(sl []float32) string {
+		fs = fs[:0]
+		for _, v := range sl {
+			fs = append(fs, fmt.Sprintf("%.2f", v))
+		}
+		return strings.Join(fs, ",")
+	}
+	ijoin := func(sl []int) string {
+		fs = fs[:0]
+		for _, v := range sl {
+			fs = append(fs, strconv.Itoa(v))
+		}
+		return strings.Join(fs, ",")
+	}
+	sort.Slice(cnvs, func(i, j int) bool { return cnvs[i].Position[0].Start < cnvs[j].Position[0].Start })
+	for _, cnv := range cnvs {
+		l := len(cnv.Position) - 1
+		if cnv.Position[0].End-cnv.Position[l].Start <= 600 {
 			continue
 		}
-		if last == nil {
-			last = iv.copy(cns)
-		} else if last.End == iv.Start && allEqual(cns, last.cns) {
-			last.update(iv)
-		} else {
-			if last.End < iv.Start || !all2(emdepth.EMDepth(last.AdjustedDepths)) {
-				fmt.Fprintf(os.Stdout, "%s\t%d\t%d\t%s\n", ivs.Chrom, last.Start, last.End, formatIV(last))
-			}
-			last = iv.copy(cns)
-		}
+		sample := samples[cnv.SampleI]
+		fmt.Fprintf(os.Stdout, "%s\t%d\t%d\t%s\t%s\t%s\t%s\t%d\n", ivs.Chrom, cnv.Position[0].Start, cnv.Position[l].End,
+			sample, ijoin(cnv.CN), fjoin(cnv.Depth), fjoin(cnv.Log2FC), cnv.PSize)
 	}
-	//fmt.Fprintf(os.Stdout, "%s\t%d\t%d\t%s\t%s\n", ivs.Chrom, last.Start, last.End, formatCns(emdepth.EMDepth(last.AdjustedDepths)), formatFloats(last.AdjustedDepths))
 }
 
 func allEqual(a, b []int) bool {
