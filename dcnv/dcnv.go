@@ -23,7 +23,6 @@ type Interval struct {
 	Start          uint32
 	End            uint32
 	Depths         []float32
-	Log2s          []float32
 	GC             float32
 	AdjustedDepths []float32
 	cns            []int
@@ -32,10 +31,9 @@ type Interval struct {
 func (i *Interval) copy(cns []int) *Interval {
 	n := len(i.Depths)
 	c := &Interval{Start: i.Start, End: i.End, Depths: make([]float32, n),
-		cns:   cns,
-		Log2s: make([]float32, n), GC: i.GC, AdjustedDepths: make([]float32, n)}
+		cns: cns,
+		GC:  i.GC, AdjustedDepths: make([]float32, n)}
 	for k := 0; k < n; k++ {
-		c.Log2s[k] = i.Log2s[k]
 		c.Depths[k] = i.Depths[k]
 		c.AdjustedDepths[k] = i.AdjustedDepths[k]
 	}
@@ -49,7 +47,6 @@ func (i *Interval) update(b *Interval) {
 	blen := float32(b.End - b.Start)
 	tot := ilen + blen
 	for k := 0; k < n; k++ {
-		i.Log2s[k] = (ilen*i.Log2s[k] + blen*b.Log2s[k]) / tot
 		i.Depths[k] = (ilen*i.Depths[k] + blen*b.Depths[k]) / tot
 		i.AdjustedDepths[k] = (ilen*i.AdjustedDepths[k] + blen*b.AdjustedDepths[k]) / tot
 	}
@@ -61,7 +58,7 @@ type Intervals struct {
 	Chrom         string
 	Intervals     []*Interval
 	sampleMedians []float32
-	SampleScalars []float32
+	sampleScalars []float32
 	samples       []string
 }
 
@@ -107,18 +104,14 @@ func intervalFromLine(l string, fa *faidx.Faidx) *Interval {
 	toks := strings.Split(l, "\t")
 	toks[len(toks)-1] = strings.TrimSpace(toks[len(toks)-1])
 	iv := &Interval{Start: mustAtoi(toks[1]), End: mustAtoi(toks[2]),
-		Depths: make([]float32, 0, len(toks)-3),
-		Log2s:  make([]float32, 0, len(toks)-3),
+		Depths:         make([]float32, 0, len(toks)-3),
+		AdjustedDepths: make([]float32, 0, len(toks)-3),
 	}
 	for c := 3; c < len(toks); c++ {
 		d := mustAtof(toks[c])
 		d /= float32(iv.End - iv.Start)
 		iv.Depths = append(iv.Depths, d)
-		if d == 0 {
-			iv.Log2s = append(iv.Log2s, -math.MaxFloat32/100)
-		} else {
-			iv.Log2s = append(iv.Log2s, float32(math.Log2(float64(d))))
-		}
+		iv.AdjustedDepths = append(iv.AdjustedDepths, d)
 	}
 	st, err := fa.Stats(toks[0], int(iv.Start), int(iv.End))
 	if err != nil {
@@ -143,30 +136,38 @@ func (ivs *Intervals) SampleMedians() []float32 {
 			ivs.sampleMedians[sampleI] = depths[len(depths)/2]
 		}
 		med := median(ivs.sampleMedians)
-		ivs.SampleScalars = make([]float32, 0, len(ivs.sampleMedians))
+		ivs.sampleScalars = make([]float32, 0, len(ivs.sampleMedians))
 		for _, sm := range ivs.sampleMedians {
-			ivs.SampleScalars = append(ivs.SampleScalars, med/sm)
+			ivs.sampleScalars = append(ivs.sampleScalars, med/sm)
 		}
 	}
 	return ivs.sampleMedians
 }
 
+func (ivs *Intervals) SampleScalars() []float32 {
+	ivs.SampleMedians()
+	return ivs.sampleScalars
+}
+
 // CorrectBySampleMedian subtracts the sample median from each sample.
 func (ivs *Intervals) CorrectBySampleMedian() {
-	for i, m := range ivs.SampleMedians() {
-		l2m := float32(math.Log2(float64(m)))
-		for _, r := range ivs.Intervals {
-			// check for underflow
-			tmp := r.Log2s[i] - l2m
-			if tmp > r.Log2s[i] {
-				log.Fatal("underflow:", r.Log2s[i], l2m, m)
+	scalars := ivs.SampleScalars()
+	for _, r := range ivs.Intervals {
+		for i, s := range scalars {
+			if r.AdjustedDepths[i] == 0 {
+				r.AdjustedDepths[i] = r.Depths[i]
 			}
-			r.Log2s[i] = tmp
+			r.AdjustedDepths[i] *= s
 		}
 	}
 }
 
-func median(a []float32) float32 {
+func median(b []float32) float32 {
+	a := make([]float32, len(b))
+	for i, bb := range b {
+		a[i] = bb
+	}
+
 	sort.Slice(a, func(i, j int) bool { return a[i] < a[j] })
 	if len(a)%2 == 0 {
 		am := a[len(a)/2]
@@ -176,50 +177,46 @@ func median(a []float32) float32 {
 	return a[len(a)/2]
 }
 
-// SetAdjustedDepths sets the AdjustedDepths for each sample based on the log2.
-// Also adjust so that all samples are on the same scale of depth.
-func (ivs Intervals) SetAdjustedDepths() {
-	meds := ivs.SampleMedians()
-	med := median(meds)
-	lmed := float32(math.Log2(float64(med)))
-
-	for _, i := range ivs.Intervals {
-		if len(i.AdjustedDepths) == 0 {
-			i.AdjustedDepths = make([]float32, len(i.Depths))
-		}
-		for k, l2 := range i.Log2s {
-			i.AdjustedDepths[k] = float32(math.Pow(2, float64(lmed+l2)))
-		}
-	}
-}
-
 // CorrectByGC sorts so that Intervals with similar GC are grouped together
 // and then docs a moving median correction on the log2 of the coverage.
 func (ivs *Intervals) CorrectByGC(window int) {
 	// sort random to make sure adjacent true sites are randomized away from each other.
 	sortRandom(ivs)
 	sortByGC(ivs)
+	dps := make([]float32, len(ivs.Intervals))
 	for sampleI := 0; sampleI < ivs.NSamples(); sampleI++ {
-		correctByMovingMedian(ivs, window, sampleI)
+		correctByMovingMedian(ivs, window, sampleI, dps)
 	}
 }
 
 // after sorting by GC, this is used to adjust log2s to subtract bias (subtract the median).
-func correctByMovingMedian(ivs *Intervals, window int, sampleI int) {
+func correctByMovingMedian(ivs *Intervals, window int, sampleI int, dps []float32) {
 	regions := ivs.Intervals
-	mm := movingmedian.NewMovingMedian(window)
+	for i, r := range regions {
+		dps[i] = r.AdjustedDepths[sampleI]
+	}
+	sort.Slice(dps, func(i, j int) bool { return dps[i] < dps[j] })
+	med := dps[len(dps)/2]
 	mid := (window-1)/2 + 1
+
+	mm := movingmedian.NewMovingMedian(window)
 	for i := 0; i < mid; i++ {
-		mm.Push(float64(regions[i].Log2s[sampleI]))
+		mm.Push(float64(regions[i].AdjustedDepths[sampleI]))
 	}
 
 	var i int
 	for i = 0; i < len(regions)-mid; i++ {
-		mm.Push(float64(regions[i+mid].Log2s[sampleI]))
-		regions[i].Log2s[sampleI] -= float32(mm.Median())
+		mm.Push(float64(regions[i+mid].AdjustedDepths[sampleI]))
+		localMed := mm.Median()
+		if localMed > 0 {
+			regions[i].AdjustedDepths[sampleI] *= (med / float32(localMed))
+		}
 	}
 	for ; i < len(regions); i++ {
-		regions[i].Log2s[sampleI] -= float32(mm.Median())
+		localMed := mm.Median()
+		if localMed > 0 {
+			regions[i].AdjustedDepths[sampleI] *= (med / float32(localMed))
+		}
 	}
 }
 
@@ -254,13 +251,14 @@ func all2(cns []int) bool {
 }
 
 // all2 returns true if all values in the slice are == 2.
-func all0(Depths []float32) bool {
+func pLess(Depths []float32, val float32) float32 {
+	var c float32
 	for _, d := range Depths {
-		if d != 0 {
-			return false
+		if d < val {
+			c++
 		}
 	}
-	return true
+	return c / float32(len(Depths))
 }
 
 // CallCopyNumbers returns Intervals for which any sample has non-zero copy-number
@@ -269,12 +267,15 @@ func (ivs *Intervals) CallCopyNumbers() {
 	samples := ivs.Samples()
 
 	cache := &emdepth.Cache{}
+	nskip := 0
 	for _, iv := range ivs.Intervals {
 		//fmt.Fprintf(os.Stdout, "%s\t%d\t%d\t%s\n", ivs.Chrom, iv.Start, iv.End, formatIV(iv))
-		if all0(iv.Depths) {
+		if pLess(iv.Depths, 7) > 0.5 {
+			nskip++
 			continue
 		}
 		if mean(iv.Depths) < 15 {
+			nskip++
 			continue
 		}
 
@@ -284,6 +285,7 @@ func (ivs *Intervals) CallCopyNumbers() {
 	}
 
 	ivs.printCNVs(cache.Clear(nil), samples)
+	log.Println("skipped:", nskip)
 
 	//fmt.Fprintf(os.Stdout, "%s\t%d\t%d\t%s\t%s\n", ivs.Chrom, last.Start, last.End, formatCns(emdepth.EMDepth(last.AdjustedDepths)), formatFloats(last.AdjustedDepths))
 }
@@ -376,7 +378,7 @@ func (ivs *Intervals) Write(n int) {
 	_s := make([]string, len(ivs.Intervals[0].Depths))
 	formatIV := func(i *Interval) string {
 		for k := 0; k < len(_s); k++ {
-			_s[k] = fmt.Sprintf("%.0f:%.1f:%.1g:%.1f", i.Depths[k], float32(math.Pow(2, float64(lmeds[k]+i.Log2s[k]))), i.Log2s[k], i.AdjustedDepths[k])
+			_s[k] = fmt.Sprintf("%.0f:%.1f", i.Depths[k], i.AdjustedDepths[k])
 		}
 		return strings.Join(_s, "\t")
 	}
@@ -401,14 +403,12 @@ func main() {
 	*/
 
 	window := 15
-	_ = window
 	bed := os.Args[1]
 	fasta := os.Args[2]
 	ivs := &Intervals{}
 	ivs.ReadRegions(bed, fasta)
 	fmt.Fprintln(os.Stderr, ivs.Samples())
-	fmt.Fprintln(os.Stderr, ivs.SampleMedians())
-	fmt.Fprintln(os.Stderr, ivs.SampleScalars)
+	fmt.Fprintln(os.Stderr, ivs.SampleScalars())
 
 	ivs.CorrectBySampleMedian()
 	//ivs.Write(10)
@@ -416,8 +416,18 @@ func main() {
 	//fmt.Println("\n\n")
 	//ivs.Write(10)
 
+	/*
+		m := make([]string, len(ivs.Samples()))
+		for _, r := range ivs.Intervals {
+			for i, d := range r.Depths {
+				m[i] = fmt.Sprintf("%.1f\t%.1f", d, r.AdjustedDepths[i])
+			}
+			fmt.Printf("%s\t%d\t%d\t%s\n", ivs.Chrom, r.Start, r.End, strings.Join(m, "\t"))
+		}
+		os.Exit(0)
+	*/
+
 	// this correct by median of all samples.
-	ivs.SetAdjustedDepths()
 	//fmt.Println("\n")
 	//ivs.Write(10)
 	//os.Exit(1)

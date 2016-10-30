@@ -174,7 +174,7 @@ func EMDepth(depths []float32, p Position) *EMD {
 		if lambda[2] == 0 {
 			n := float64(len(depths))
 			// we exclude the top bin to avoid over-adjusting lambda[2] for extreme outliers.
-			for i := 1; i < len(lambda); i++ {
+			for i := 1; i < len(lambda)-1; i++ {
 				bin := binned[i]
 				pdepth := float64(len(bin)) / n
 				if lambda[i] < eps {
@@ -190,8 +190,8 @@ func EMDepth(depths []float32, p Position) *EMD {
 		}
 		// make CN 2 more likely by expanding the range between CN1 and CN3.
 		span := lambda[2] - lambda[1]
-		lambda[1] -= (span / 2)
-		lambda[3] += (span / 2)
+		lambda[1] -= (span / 3)
+		lambda[3] += (span / 3)
 		sumd, maxd = summaxdiff(lambda, lastCenters)
 	}
 	binPool.Put(binned)
@@ -212,6 +212,10 @@ type EMD struct {
 // less <2.
 // 3)a float indicating the proportion of samples that in the same copy-number
 // state in both.
+
+const lower = -0.90
+const upper = 0.50
+
 func (e *EMD) Same(o *EMD) (non2 []int, changed []int, pct float64) {
 	ofc := o.Log2FC()
 	var nSame float64
@@ -219,12 +223,12 @@ func (e *EMD) Same(o *EMD) (non2 []int, changed []int, pct float64) {
 	changed = make([]int, 0, 1)
 	for i, ee := range e.Log2FC() {
 		oo := ofc[i]
-		if ee > -0.99 && ee < 0.59 && oo > -0.99 && oo < 0.59 {
+		if ee > lower && ee < upper && oo > lower && oo < upper {
 			nSame++
 			continue
 		}
 		// same direction.
-		if (oo >= 0.59 && ee >= 0.59) || (oo <= -0.99 && ee <= -0.99) {
+		if (oo >= upper && ee >= upper) || (oo <= lower && ee <= lower) {
 			non2 = append(non2, i)
 			nSame++
 		} else {
@@ -287,13 +291,10 @@ func (e *EMD) adjustCN(cn int, depth float64) int {
 	return cn
 }
 
-const ProportionSame = 0.6
-
 // Cache is a way to track depth states.eps
 // As new items are added to the cache, the value from EMD.Same
 // is compared.
 // Each time an EMD is added, a slice of Regions that have ended is returned.
-// The cache is cleared if the proportion of samples that changed state is > ProportionSame
 type Cache struct {
 	last *EMD
 	// for each sample (key), where is it non-CN2?
@@ -371,10 +372,4 @@ func makecnvs(es []*EMD, sampleI int) *CNV {
 		cnv.Log2FC = append(cnv.Log2FC, float32(fc))
 	}
 	return cnv
-}
-
-func weightedmean(a Position, b Position, af float32, bf float32) float32 {
-	la := float32(a.End - a.Start)
-	lb := float32(b.End - b.Start)
-	return (af*float32(la) + bf*float32(lb)) / (la + lb)
 }
