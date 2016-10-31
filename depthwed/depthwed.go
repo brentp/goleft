@@ -150,7 +150,6 @@ func next(beds []*xopen.Reader, size int) (depths []depth, eof bool) {
 				depths[i].end = tmp.end
 				depths[i].depth += tmp.depth
 			}
-
 		}
 		k++
 	}
