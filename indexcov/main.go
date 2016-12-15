@@ -2,7 +2,10 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
+	"strconv"
+	"strings"
 
 	"github.com/biogo/hts/bam"
 )
@@ -16,22 +19,22 @@ func NormalizedDepth(idx *bam.Index, refID int, start int, end int) []float32 {
 
 	last := in.Refs[0]
 	// get the last chromosome with any data.
-	for k := len(in.Refs) - 1; k > 0; k-- {
+	totalIntervals := 0
+	for k := 0; k < len(in.Refs)-1; k++ {
+		totalIntervals += len(in.Refs[k].Intervals)
 		if len(in.Refs[k].Intervals) > 0 {
 			last = in.Refs[k]
-			break
 		}
 	}
 	// this gives the total file size.
 	size := float64(last.Intervals[len(last.Intervals)-1].File + TileWidth)
-	meanSizePerTile := size / float64(TileWidth)
+	ref := in.Refs[refID]
+
+	meanSizePerTile := size / float64(totalIntervals)
+	log.Println(meanSizePerTile, len(last.Intervals))
 
 	si, ei := start/TileWidth, end/TileWidth
-	ref := in.Refs[refID]
-	if end == 0 {
-		ei = len(ref.Intervals) - 1
-	}
-	if ei >= len(ref.Intervals) {
+	if end == 0 || ei >= len(ref.Intervals) {
 		ei = len(ref.Intervals) - 1
 	}
 	depths := make([]float32, 0, ei-si)
@@ -49,8 +52,43 @@ func mean(a []float32) float32 {
 	return s
 }
 
+func getTid(b *bam.Reader, chrom string) int {
+	refs := b.Header().Refs()
+	if strings.HasPrefix(chrom, "chr") {
+		chrom = chrom[3:]
+	}
+	for i, ref := range refs {
+		if chrom == ref.Name() {
+			return i
+		}
+		if strings.HasPrefix(ref.Name(), "chr") {
+			if chrom == ref.Name()[3:] {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
 func main() {
-	rdr, err := os.Open("/data/human/15-0022949.sub.bam.bai")
+	chrom := os.Args[1]
+	rdr, err := os.Open(os.Args[2])
+	if err != nil {
+		panic(err)
+	}
+	brdr, err := bam.NewReader(rdr, 1)
+	if err != nil {
+		panic(err)
+	}
+
+	tid := getTid(brdr, chrom)
+	rdr.Close()
+	brdr.Close()
+	if tid == -1 {
+		panic(fmt.Sprintf("unable to find chromosome: %s", chrom))
+	}
+
+	rdr, err = os.Open(os.Args[2] + ".bai")
 	if err != nil {
 		panic(err)
 	}
@@ -60,17 +98,14 @@ func main() {
 		panic(err)
 	}
 
-	depths := NormalizedDepth(idx, 19, 0, 0)
-	fmt.Println(mean(depths))
-	depths = NormalizedDepth(idx, 20, 0, 0)
-	fmt.Println(mean(depths))
+	s, err := strconv.Atoi(chrom)
+	if err != nil {
+		panic(err)
+	}
 
-	depths = NormalizedDepth(idx, 21, 0, 0)
-	fmt.Println(mean(depths))
-
-	for _, r := range idx.Index().Refs {
-		if r.Stats != nil {
-			fmt.Println(r.Stats)
-		}
+	depths := NormalizedDepth(idx, s-1, 0, 0)
+	//fmt.Println(mean(depths))
+	for i := 0; i < len(depths); i++ {
+		fmt.Printf("%s\t%d\t%d\t%.3f\n", chrom, i*16384, (i+1)*16384, depths[i])
 	}
 }
