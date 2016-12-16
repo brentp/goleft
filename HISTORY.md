@@ -1,3 +1,7 @@
+v0.1.8
+======
++ `indexcov`: output header with sample names.
+
 v0.1.7
 ======
 

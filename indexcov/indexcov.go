@@ -29,6 +29,9 @@ func getRefs(idx *bam.Index) []RefIndex {
 	return (*(*[1 << 28]RefIndex)(ptr))[:refs.Len()]
 }
 
+// MaxCN is the maximum normalized value.
+var MaxCN = float32(6)
+
 // NormalizedDepth returns a list of numbers for the normalized depth of the given region.
 // Values are scaled to have a mean of 1. If end is 0, the full chromosome is returned.
 func NormalizedDepth(idx *bam.Index, refID int, start int, end int) []float32 {
@@ -59,6 +62,9 @@ func NormalizedDepth(idx *bam.Index, refID int, start int, end int) []float32 {
 	depths := make([]float32, 0, ei-si)
 	for i, o := range ref.Intervals[si:ei] {
 		depths = append(depths, float32(float64(ref.Intervals[si+i+1].File-o.File)/meanSizePerTile))
+		if depths[i] > MaxCN {
+			depths[i] = MaxCN
+		}
 	}
 	return depths
 }
@@ -79,6 +85,34 @@ func getRef(b *bam.Reader, chrom string) *sam.Reference {
 		}
 	}
 	return nil
+}
+
+func getShortName(b string) string {
+
+	fh, err := os.Open(b)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer fh.Close()
+	br, err := bam.NewReader(fh, 2)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer br.Close()
+	m := make(map[string]bool)
+	for _, rg := range br.Header().RGs() {
+		m[rg.Get(sam.Tag([2]byte{'S', 'M'}))] = true
+	}
+	if len(m) > 1 {
+		log.Println("warning: more than one tag for %s", b)
+	}
+	for sm := range m {
+		return sm
+	}
+	vs := strings.Split(b, "/")
+	v := vs[len(vs)-1]
+	vs = strings.SplitN(v, ".", 1)
+	return vs[len(vs)-1]
 }
 
 // Main is called from the goleft dispatcher
@@ -110,6 +144,7 @@ func Main() {
 	}
 
 	var idxs []*bam.Index
+	names := make([]string, 0, len(cli.Bam))
 
 	for _, b := range cli.Bam {
 
@@ -123,9 +158,11 @@ func Main() {
 			panic(err)
 		}
 		idxs = append(idxs, idx)
+		names = append(names, getShortName(b))
 	}
 
 	depths := make([][]float32, len(idxs))
+	fmt.Printf("#chrom\tstart\tend\t%s\n", strings.Join(names, "\t"))
 	for _, ref := range refs {
 		chrom := ref.Name()
 
