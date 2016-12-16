@@ -1,6 +1,7 @@
 v0.1.8
 ======
 + `indexcov`: output header with sample names.
++ `indexcov`: limit reported CN.
 
 v0.1.7
 ======
