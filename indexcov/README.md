@@ -27,6 +27,9 @@ With that, it's simple to plot the depth across the genome:
 Where each color is a sample and here we can see that the purple sample has a large deletion and the yellow/tan sample has a
 higher variance.
 
+If we plot the **X chromosome** we can see a nice separation of samples by sex along with the PAR at the left:
+
+![X Example](https://cloud.githubusercontent.com/assets/1739/21277093/d36f3798-c391-11e6-931b-0a2712cfd016.png "sex example")
 
 Todo
 ====
