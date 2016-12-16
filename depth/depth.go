@@ -45,7 +45,7 @@ type dargs struct {
 const command = "echo %s; samtools depth -Q %d -d %d -r %s %s"
 
 // this is the size in basepairs of the genomic chunks for parallelization.
-const step = 10000000
+var step = 10000000
 
 var exitCode = 0
 
@@ -126,6 +126,9 @@ func genCommands(args dargs) chan string {
 		return ch
 	}
 	go func() {
+		// make sure step jives with windowsize otherwise we get WindowSize
+		// where it doesn't have the right size
+		step = max(1, step/args.WindowSize) * args.WindowSize
 
 		rdr, err := xopen.Ropen(args.Reference + ".fai")
 		pcheck(err)
@@ -144,7 +147,7 @@ func genCommands(args dargs) chan string {
 			length, err := strconv.Atoi(toks[1])
 			pcheck(err)
 			for i := 0; i < length; i += step {
-				region := fmt.Sprintf("%s:%d-%d", chrom, i, min(i+step, length))
+				region := fmt.Sprintf("%s:%d-%d", chrom, i+1, min(i+step, length))
 				ch <- fmt.Sprintf(command, region, args.Q, args.MaxMeanDepth+2500,
 					region, args.Bam)
 			}
