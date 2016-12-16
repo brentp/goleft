@@ -45,3 +45,17 @@ to stdout.
 goleft covmed $bam
 ```
 This will output an estimate of median coverage to stdout.
+
+### indexcov
+
+quickly estimate coverage from the bam index.
+
+##### Usage 
+
+```
+goleft indexcov -c $chrom *.bam > depth.bed
+```
+
+This will create a bed file where each additional column is the normalized, estimated depth for each
+sample.
+
