@@ -10,9 +10,10 @@ import (
 	"github.com/brentp/goleft/covmed"
 	"github.com/brentp/goleft/depth"
 	"github.com/brentp/goleft/depthwed"
+	"github.com/brentp/goleft/indexcov"
 )
 
-const Version = "0.1.7c"
+const Version = "0.1.7"
 
 type progPair struct {
 	help string
@@ -23,6 +24,7 @@ var progs = map[string]progPair{
 	"depth":    progPair{"parallelize calls to samtools in user-defined windows", depth.Main},
 	"depthwed": progPair{"matricize output from depth to n-sites * n-samples", depthwed.Main},
 	"covmed":   progPair{"calculate median coverage on a bam by sampling", covmed.Main},
+	"indexcov": progPair{"quick coverage estimate using only the bam index", indexcov.Main},
 }
 
 func printProgs() {
