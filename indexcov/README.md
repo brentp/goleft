@@ -1,12 +1,14 @@
 indexcov
 ========
 
-quickly estimate coverage from the bam index. 
+Quickly estimate coverage from the bam index. 
 A bam index has 16KB resolution so that's what this gives, but it gives what appears to be a high-quality estimate
 in seconds per genome.
 
 The output is scaled to around 1. So a long stretch with values of 2 would be a duplication.
 This is useful as a quick QC to get coverage values across the genome.
+
+In our tests, we can estimate depth on chromosome 2 of a 60X genome for 45 samples in 1 minute.
 
 Usage
 =====
@@ -16,7 +18,7 @@ goleft indexcov -c $chrom *.bam > depth.bed
 ```
 
 This will create a bed file where each additional column is the normalized, estimated depth for each
-sample.
+sample. If no chromosome is given, it will do the whole genome.
 
 With that, it's simple to plot the depth across the genome:
 
@@ -26,3 +28,7 @@ Where each color is a sample and here we can see that the purple sample has a la
 higher variance.
 
 
+Todo
+====
+
+parallelize the depth calc by sample.
