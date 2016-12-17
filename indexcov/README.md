@@ -34,12 +34,12 @@ If we plot the **X chromosome** we can see a nice separation of samples by sex a
 How It Works
 ============
 
-The bam index stores a linear index for each chromosome indicating the file (and virtual) offset for every 16,384 bases index
+The bam index stores a linear index for each chromosome indicating the file (and virtual) offset for every 16,384 bases in
 that chromosome. Since we know the total number of 16,384 base intervals in the index and the size of the bam file (from the
-last file offset stored in the index), then we can know the average size (in bytes) of each 16,384 bases. So, we iterate over
-each element in the linear index, subtract the previous file offset, and scale by the expected (average size). This gives then
-scaled value for each 16,384 chunk. There are many ways that this value can be off, but, in practice, it works well as a rough
-estimate.
+last file offset stored in the index), we know the average size (in bytes) of taken by each 16,384 base chunk. So, we iterate
+over each (16KB) element in the linear index, subtract the previous file offset, and scale by the expected (average) size. This
+gives the scaled value for each 16,384-base chunk. There are many ways that this value can be off, but, in practice, it works
+well as a rough estimate.
 
 Todo
 ====
