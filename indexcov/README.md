@@ -5,7 +5,7 @@ Quickly estimate coverage from the bam index.
 A bam index has 16KB resolution so that's what this gives, but it provides what appears to be a high-quality 
 coverage estimate in seconds per genome.
 
-The output is scaled to around 1. So a long stretch with values of 2 would be a duplication.
+The output is scaled to around 1. So a long stretch with values of 1.5 would be a heterozygous duplication.
 This is useful as a quick QC to get coverage values across the genome.
 
 In our tests, we can estimate depth on chromosome 2 of a 60X genome for 45 samples in 1 minute.
