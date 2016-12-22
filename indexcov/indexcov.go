@@ -21,10 +21,6 @@ var cli = struct {
 	Bam    []string `arg:"positional,required,help:bam(s) for which to estimate coverage"`
 }{}
 
-func chunksize(c bgzf.Chunk) int64 {
-	return c.End.File - c.Begin.File
-}
-
 func getRefs(idx *bam.Index) []RefIndex {
 	refs := reflect.ValueOf(*idx).FieldByName("idx").FieldByName("Refs")
 	ptr := unsafe.Pointer(refs.Pointer())
@@ -34,25 +30,39 @@ func getRefs(idx *bam.Index) []RefIndex {
 // MaxCN is the maximum normalized value.
 var MaxCN = float32(6)
 
+// Index wraps a bam.Index to cache calculated values.
+type Index struct {
+	*bam.Index
+
+	//mu                *sync.RWMutex
+	medianSizePerTile float64
+	refs              []RefIndex
+}
+
 // NormalizedDepth returns a list of numbers for the normalized depth of the given region.
 // Values are scaled to have a mean of 1. If end is 0, the full chromosome is returned.
-func NormalizedDepth(idx *bam.Index, refID int, start int, end int) []float32 {
-	refs := getRefs(idx)
+func (x *Index) NormalizedDepth(refID int, start int, end int) []float32 {
 
-	// sizes is used to get the median.
-	sizes := make([]uint32, 0, 16384)
-	// get the last chromosome with any data.
-	for k := 0; k < len(refs)-1; k++ {
-		for i, iv := range refs[k].Intervals[1:] {
-			sizes = append(sizes, uint32(iv.File-refs[k].Intervals[i].File))
+	//x.mu.Lock()
+	//defer x.mu.Unlock()
+	if x.medianSizePerTile == 0.0 {
+		x.refs = getRefs(x.Index)
+
+		// sizes is used to get the median.
+		sizes := make([]uint32, 0, 16384)
+		// get the last chromosome with any data.
+		for k := 0; k < len(x.refs)-1; k++ {
+			for i, iv := range x.refs[k].Intervals[1:] {
+				sizes = append(sizes, uint32(iv.File-x.refs[k].Intervals[i].File))
+			}
 		}
-	}
-	// this gives the total file size.
-	ref := refs[refID]
 
-	// we get the median as it's more stable than mean.
-	sort.Slice(sizes, func(i, j int) bool { return sizes[i] < sizes[j] })
-	medianSizePerTile := float64(sizes[len(sizes)/2])
+		// we get the median as it's more stable than mean.
+		sort.Slice(sizes, func(i, j int) bool { return sizes[i] < sizes[j] })
+		x.medianSizePerTile = float64(sizes[len(sizes)/2])
+	}
+	//x.mu.Unlock()
+	ref := x.refs[refID]
 
 	si, ei := start/TileWidth, end/TileWidth
 	if end == 0 || ei >= len(ref.Intervals) {
@@ -63,7 +73,7 @@ func NormalizedDepth(idx *bam.Index, refID int, start int, end int) []float32 {
 	}
 	depths := make([]float32, 0, ei-si)
 	for i, o := range ref.Intervals[si:ei] {
-		depths = append(depths, float32(float64(ref.Intervals[si+i+1].File-o.File)/medianSizePerTile))
+		depths = append(depths, float32(float64(ref.Intervals[si+i+1].File-o.File)/x.medianSizePerTile))
 		if depths[i] > MaxCN {
 			depths[i] = MaxCN
 		}
@@ -186,7 +196,7 @@ func Main() {
 		panic(fmt.Sprintf("unable to find chromosome: %s", cli.Chrom))
 	}
 
-	var idxs []*bam.Index
+	var idxs []*Index
 	names := make([]string, 0, len(cli.Bam))
 
 	for _, b := range cli.Bam {
@@ -200,7 +210,7 @@ func Main() {
 		if err != nil {
 			panic(err)
 		}
-		idxs = append(idxs, idx)
+		idxs = append(idxs, &Index{Index: idx})
 		names = append(names, getShortName(b))
 	}
 
@@ -217,7 +227,7 @@ func Main() {
 		chrom := ref.Name()
 
 		for k, idx := range idxs {
-			depths[k] = NormalizedDepth(idx, ref.ID(), 0, ref.Len())
+			depths[k] = idx.NormalizedDepth(ref.ID(), 0, ref.Len())
 			if i == 0 {
 				counts[k] = make([]int, slots)
 			}
