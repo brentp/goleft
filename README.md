@@ -5,12 +5,27 @@
 # goleft
 
 goleft is a collection of bioinformatics tools written in
-[go](https://gitub.com/golang.org) distributed together
+[go](https://gitub.com/golang/go) distributed together
 as a single binary under a liberal (MIT) license.
 
 Running the binary `goleft` will give a list of subcommands
 with a short description. Running any subcommand without
 arguments will give a full help for that command.
+
+# Installation
+
+The easiest way to install goleft is to download the latest binary from
+the [releases](https://github.com/brentp/goleft/releases) and make sure to chmod +x the resulting binary.
+
+If you are using [go](https://github.com/golang/go), you can build from source with:
+```
+go get -u github.com/brentp/goleft/...
+```
+
+And then go install from that directory.
+
+
+`goleft` is also available in [bioconda](https://bioconda.github.io)
 
 # Commands
 
