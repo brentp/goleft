@@ -20,14 +20,8 @@ the [releases](https://github.com/brentp/goleft/releases) and make sure to chmod
 If you are using [go](https://github.com/golang/go), you can build from source with:
 ```
 go get -u github.com/brentp/goleft/...
-```
-
-If you want to install the binary to your machine:
-
-```
 go install github.com/brentp/goleft/cmd/goleft
 ```
-
 
 `goleft` is also available in [bioconda](https://bioconda.github.io)
 
