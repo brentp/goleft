@@ -1,3 +1,8 @@
+v0.1.9 (dev)
+======
++ `indexcov`: fix for sparse bams
++ `indexcov`: performance improvements
+
 v0.1.8
 ======
 + `indexcov`: output header with sample names.

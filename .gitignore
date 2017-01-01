@@ -3,3 +3,5 @@
 *_linux64
 *_osx
 *_darwin
+*pprof*
+*.gz

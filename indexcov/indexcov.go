@@ -52,6 +52,9 @@ func (x *Index) NormalizedDepth(refID int, start int, end int) []float32 {
 		sizes := make([]uint32, 0, 16384)
 		// get the last chromosome with any data.
 		for k := 0; k < len(x.refs)-1; k++ {
+			if len(x.refs[k].Intervals) < 2 {
+				continue
+			}
 			for i, iv := range x.refs[k].Intervals[1:] {
 				sizes = append(sizes, uint32(iv.File-x.refs[k].Intervals[i].File))
 			}
@@ -60,6 +63,14 @@ func (x *Index) NormalizedDepth(refID int, start int, end int) []float32 {
 		// we get the median as it's more stable than mean.
 		sort.Slice(sizes, func(i, j int) bool { return sizes[i] < sizes[j] })
 		x.medianSizePerTile = float64(sizes[len(sizes)/2])
+		// if we have a single chunk of a chrom, then we get a lot of zeros so we address that here.
+		if x.medianSizePerTile == 0 {
+			i := len(sizes) / 2
+			for ; i < len(sizes) && sizes[i] == 0; i++ {
+			}
+			sizes = sizes[i:]
+			x.medianSizePerTile = float64(sizes[len(sizes)/2])
+		}
 	}
 	//x.mu.Unlock()
 	ref := x.refs[refID]
