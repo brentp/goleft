@@ -255,6 +255,11 @@ func Main() {
 		for i := 0; i < len(depths[longesti]); i++ {
 			fmt.Fprintf(bgz, "%s\t%d\t%d\t%s\n", chrom, i*16384, (i+1)*16384, depthsFor(depths, i))
 		}
+		if len(depths[longesti]) > 0 {
+			if err := plotDepths(depths, names, chrom, cli.Prefix); err != nil {
+				panic(err)
+			}
+		}
 	}
 	bgz.Close()
 
@@ -278,7 +283,9 @@ func writeROCs(counts [][]int, names []string, prefix string) {
 		panic(err)
 	}
 	rocs := getROCs(counts)
-	plotROCs(rocs, names, prefix)
+	if err := plotROCs(rocs, names, prefix); err != nil {
+		panic(err)
+	}
 	fmt.Fprintf(fh, "cov\t%s\n", strings.Join(names, "\t"))
 	nSamples := len(names)
 
