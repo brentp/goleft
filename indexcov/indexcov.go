@@ -101,8 +101,8 @@ func tint(f float32) int {
 	return slots - 1
 }
 
-// DepthsAt calculates the count of items in depths that are at 100 * d
-func DepthsAt(depths []float32, counts []int) {
+// CountsAtDepth calculates the count of items in depths that are at 100 * d
+func CountsAtDepth(depths []float32, counts []int) {
 	if len(counts) != slots {
 		panic(fmt.Sprintf("indexcov: expecting counts to be length %d", slots))
 	}
@@ -111,7 +111,9 @@ func DepthsAt(depths []float32, counts []int) {
 	}
 }
 
-func DepthsROC(counts []int) []float32 {
+// CountsROC returns a slice that indicates the cumulative proportion of
+// 16KB chunks that were at least (normalized) depth given by their index.
+func CountsROC(counts []int) []float32 {
 	totals := make([]int, len(counts))
 	totals[len(totals)-1] = counts[len(totals)-1]
 	for i := len(totals) - 2; i >= 0; i-- {
@@ -248,7 +250,7 @@ func Main() {
 				counts[k] = make([]int, slots)
 			}
 
-			DepthsAt(depths[k], counts[k])
+			CountsAtDepth(depths[k], counts[k])
 		}
 		for i := 0; i < len(depths[longesti]); i++ {
 			fmt.Fprintf(bgz, "%s\t%d\t%d\t%s\n", chrom, i*16384, (i+1)*16384, depthsFor(depths, i))
@@ -260,17 +262,24 @@ func Main() {
 
 }
 
+func getROCs(counts [][]int) [][]float32 {
+	rocs := make([][]float32, len(counts))
+
+	for i, scount := range counts {
+		rocs[i] = CountsROC(scount)
+	}
+	return rocs
+
+}
+
 func writeROCs(counts [][]int, names []string, prefix string) {
 	fh, err := os.Create(fmt.Sprintf("%s.indexcov.roc", prefix))
 	if err != nil {
 		panic(err)
 	}
+	rocs := getROCs(counts)
+	plotROCs(rocs, names, prefix)
 	fmt.Fprintf(fh, "cov\t%s\n", strings.Join(names, "\t"))
-	rocs := make([][]float32, len(counts))
-
-	for i, scount := range counts {
-		rocs[i] = DepthsROC(scount)
-	}
 	nSamples := len(names)
 
 	vals := make([]string, nSamples)

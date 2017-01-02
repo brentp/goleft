@@ -2,6 +2,7 @@ v0.1.9 (dev)
 ======
 + `indexcov`: fix for sparse bams and other edge-cases.
 + `indexcov`: performance improvements.
++ `indexcov`: output html with plot of coverage.
 
 v0.1.8
 ======
