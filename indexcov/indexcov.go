@@ -234,17 +234,23 @@ func Main() {
 	}
 
 	fmt.Fprintf(bgz, "#chrom\tstart\tend\t%s\n", strings.Join(names, "\t"))
-	for i, ref := range refs {
+	for ir, ref := range refs {
 		chrom := ref.Name()
+		// Some samples may not have all the data, so we always take the longest sample for printing.
+		longest, longesti := 0, 0
 
 		for k, idx := range idxs {
 			depths[k] = idx.NormalizedDepth(ref.ID(), 0, ref.Len())
-			if i == 0 {
+			if len(depths[k]) > longest {
+				longesti = k
+			}
+			if ir == 0 {
 				counts[k] = make([]int, slots)
 			}
+
 			DepthsAt(depths[k], counts[k])
 		}
-		for i := 0; i < len(depths[0]); i++ {
+		for i := 0; i < len(depths[longesti]); i++ {
 			fmt.Fprintf(bgz, "%s\t%d\t%d\t%s\n", chrom, i*16384, (i+1)*16384, depthsFor(depths, i))
 		}
 	}

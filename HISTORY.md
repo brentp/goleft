@@ -1,7 +1,7 @@
 v0.1.9 (dev)
 ======
-+ `indexcov`: fix for sparse bams
-+ `indexcov`: performance improvements
++ `indexcov`: fix for sparse bams and other edge-cases.
++ `indexcov`: performance improvements.
 
 v0.1.8
 ======
