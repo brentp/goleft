@@ -1,6 +1,7 @@
 package indexcov
 
 import (
+	"encoding/json"
 	"fmt"
 	"math/rand"
 	"os"
@@ -10,8 +11,8 @@ import (
 )
 
 type vs struct {
-	xs   []float64
-	rocs []float64
+	xs []float64
+	ys []float64
 }
 
 func (v *vs) Xs() []float64 {
@@ -19,7 +20,7 @@ func (v *vs) Xs() []float64 {
 }
 
 func (v *vs) Ys() []float64 {
-	return v.rocs
+	return v.ys
 }
 
 func (v *vs) Rs() []float64 {
@@ -32,7 +33,7 @@ const cnMax = 2.5
 func asValues(vals []float32, multiplier float64) chartjs.Values {
 
 	// skip until we find non-zero.
-	v := vs{xs: make([]float64, 0, len(vals)), rocs: make([]float64, 0, len(vals))}
+	v := vs{xs: make([]float64, 0, len(vals)), ys: make([]float64, 0, len(vals))}
 	seenNonZero := false
 	for i, r := range vals {
 		if r == 0 && !seenNonZero {
@@ -43,7 +44,7 @@ func asValues(vals []float32, multiplier float64) chartjs.Values {
 		if r > cnMax {
 			r = cnMax
 		}
-		v.rocs = append(v.rocs, float64(r))
+		v.ys = append(v.ys, float64(r))
 	}
 	return &v
 }
@@ -116,4 +117,62 @@ func plotROCs(rocs [][]float32, samples []string, chrom string) (chartjs.Chart, 
 	}
 	chart.Options.Responsive = chartjs.False
 	return chart, nil
+}
+
+func plotSex(sexes map[string][]float64, chroms []string, samples []string) (chartjs.Chart, string, error) {
+	chart := chartjs.Chart{Label: "sex"}
+	tmp := sexes["_inferred"]
+	inferred := make([]int, len(tmp))
+	cns := make(map[int]bool)
+	for i, inf := range tmp {
+		inferred[i] = int(inf)
+		cns[int(inf)] = true
+	}
+	xa, err := chart.AddXAxis(chartjs.Axis{Type: chartjs.Linear, Position: chartjs.Bottom,
+		ScaleLabel: &chartjs.ScaleLabel{FontSize: 16, LabelString: chroms[0] + " Copy Number",
+			Display: chartjs.True}, Tick: &chartjs.Tick{Min: 0}})
+	if err != nil {
+		return chart, "", err
+	}
+	ya, err := chart.AddYAxis(chartjs.Axis{Type: chartjs.Linear, Position: chartjs.Left,
+		ScaleLabel: &chartjs.ScaleLabel{FontSize: 16, LabelString: chroms[1] + " Copy Number",
+			Display: chartjs.True}, Tick: &chartjs.Tick{Min: 0}})
+	if err != nil {
+		return chart, "", err
+	}
+	// chartjs separates into datasets so we need to track which samples in which datasets.
+	jssamples := make([][]string, 0, 2)
+	for cn := range cns {
+		jssamples = append(jssamples, make([]string, 0))
+		vals := &vs{xs: make([]float64, 0, len(inferred)),
+			ys: make([]float64, 0, len(inferred))}
+		for i, inf := range inferred {
+			if inf != cn {
+				continue
+			}
+			jssamples[len(jssamples)-1] = append(jssamples[len(jssamples)-1], samples[i])
+			vals.xs = append(vals.xs, sexes[chroms[0]][i])
+			vals.ys = append(vals.ys, sexes[chroms[1]][i])
+		}
+		c := randomColor(cn)
+		dataset := chartjs.Dataset{Data: vals, Label: fmt.Sprintf("Inferred CN for %s: %d", chroms[0], cn), Fill: chartjs.False, PointRadius: 6, BorderWidth: 0, BorderColor: &types.RGBA{150, 150, 150, 150}, PointBackgroundColor: c, BackgroundColor: c, ShowLine: chartjs.False}
+		dataset.XAxisID = xa
+		dataset.YAxisID = ya
+		chart.AddDataset(dataset)
+	}
+	chart.Options.Responsive = chartjs.False
+	sjson, err := json.Marshal(jssamples)
+	if err != nil {
+		panic(err)
+	}
+	jsfunc := fmt.Sprintf(`
+	chart.options.tooltips.callbacks.footer = function(tts, data) {
+		var names = %s
+		var out = []
+		tts.forEach(function(ti) {
+			out.push(names[ti.datasetIndex][ti.index])
+		})
+		return out.join(",")
+	}`, sjson)
+	return chart, jsfunc, nil
 }
