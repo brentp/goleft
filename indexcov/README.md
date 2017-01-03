@@ -38,7 +38,7 @@ That plot is taken directly from the HTML output by `indexcov`.
 
 Finally, `indexcov` will output a coverage (ROC) plot that shows how much of the genome is coverage at at given (scaled) depth.
 This is output to a $prefix-depth-roc.html file and looks like:
-![ROC Example](https://cloud.githubusercontent.com/assets/1739/21597688/ef76ae8a-d10b-11e6-88a0-735c73203fc7.png "ROC example")
+![ROC Example](https://cloud.githubusercontent.com/assets/1739/21599983/b27fa4d8-d132-11e6-95b9-e9fa8ae64412.png "ROC example")
 
 Here we can see that one sample has much lower coverage than the rest, and we can hover and determine the exact sample.
 
