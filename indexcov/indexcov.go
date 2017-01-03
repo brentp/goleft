@@ -2,6 +2,7 @@ package indexcov
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"reflect"
@@ -13,12 +14,15 @@ import (
 	"github.com/biogo/hts/bam"
 	"github.com/biogo/hts/bgzf"
 	"github.com/biogo/hts/sam"
+	chartjs "github.com/brentp/go-chartjs"
+	"github.com/brentp/go-chartjs/types"
 )
 
 var cli = struct {
-	Prefix string   `arg:"-p,required,help:prefix for output files"`
-	Chrom  string   `arg:"-c,help:optional chromosome to extract depth. default is entire genome."`
-	Bam    []string `arg:"positional,required,help:bam(s) for which to estimate coverage"`
+	Prefix    string   `arg:"-p,required,help:prefix for output files"`
+	IncludeGL bool     `arg:"-e,help:plot GL chromosomes like: GL000201.1 which are not plotted by default"`
+	Chrom     string   `arg:"-c,help:optional chromosome to extract depth. default is entire genome."`
+	Bam       []string `arg:"positional,required,help:bam(s) for which to estimate coverage"`
 }{}
 
 func getRefs(idx *bam.Index) []RefIndex {
@@ -43,8 +47,6 @@ type Index struct {
 // Values are scaled to have a mean of 1. If end is 0, the full chromosome is returned.
 func (x *Index) NormalizedDepth(refID int, start int, end int) []float32 {
 
-	//x.mu.Lock()
-	//defer x.mu.Unlock()
 	if x.medianSizePerTile == 0.0 {
 		x.refs = getRefs(x.Index)
 
@@ -72,7 +74,6 @@ func (x *Index) NormalizedDepth(refID int, start int, end int) []float32 {
 			x.medianSizePerTile = float64(sizes[len(sizes)/2])
 		}
 	}
-	//x.mu.Unlock()
 	ref := x.refs[refID]
 
 	si, ei := start/TileWidth, end/TileWidth
@@ -92,7 +93,11 @@ func (x *Index) NormalizedDepth(refID int, start int, end int) []float32 {
 	return depths
 }
 
-const slots = 200
+const slots = 70
+
+// with 0.5, we'll get centered at 1 and max of 2.
+// so the max is 1/slotsMid
+const slotsMid = float64(2) / float64(3)
 
 func tint(f float32) int {
 	if v := int(f); v < slots {
@@ -107,7 +112,7 @@ func CountsAtDepth(depths []float32, counts []int) {
 		panic(fmt.Sprintf("indexcov: expecting counts to be length %d", slots))
 	}
 	for _, d := range depths {
-		counts[tint(d*100+0.5)]++
+		counts[tint(d*(slots*float32(slotsMid))+0.5)]++
 	}
 }
 
@@ -181,9 +186,16 @@ func getWriter(prefix string) (*bgzf.Writer, error) {
 	return bgzf.NewWriter(fh, 1), nil
 }
 
+func zero(ints []int) {
+	for i := range ints {
+		ints[i] = 0
+	}
+}
+
 // Main is called from the goleft dispatcher
 func Main() {
 
+	chartjs.XFloatFormat = "%.0f"
 	arg.MustParse(&cli)
 
 	rdr, err := os.Open(cli.Bam[0])
@@ -235,6 +247,14 @@ func Main() {
 		panic(err)
 	}
 
+	rfh, err := os.Create(fmt.Sprintf("%s.indexcov.roc", cli.Prefix))
+	if err != nil {
+		panic(err)
+	}
+
+	// we plot all the coverage roc charts in a single html file.
+	charts := make([]chartjs.Chart, 0, len(refs))
+
 	fmt.Fprintf(bgz, "#chrom\tstart\tend\t%s\n", strings.Join(names, "\t"))
 	for ir, ref := range refs {
 		chrom := ref.Name()
@@ -248,6 +268,8 @@ func Main() {
 			}
 			if ir == 0 {
 				counts[k] = make([]int, slots)
+			} else {
+				zero(counts[k])
 			}
 
 			CountsAtDepth(depths[k], counts[k])
@@ -256,15 +278,32 @@ func Main() {
 			fmt.Fprintf(bgz, "%s\t%d\t%d\t%s\n", chrom, i*16384, (i+1)*16384, depthsFor(depths, i))
 		}
 		if len(depths[longesti]) > 0 {
-			if err := plotDepths(depths, names, chrom, cli.Prefix); err != nil {
-				panic(err)
+			c := writeROCs(counts, names, chrom, cli.Prefix, rfh)
+			if cli.IncludeGL || !strings.HasPrefix(chrom, "GL") {
+				charts = append(charts, c)
+				if err := plotDepths(depths, names, chrom, cli.Prefix); err != nil {
+					panic(err)
+				}
+			}
+			if len(charts) > 1 {
+				charts[len(charts)-1].Options.Legend = &chartjs.Legend{Display: types.False}
 			}
 		}
 	}
+	chartjs.XFloatFormat = "%.2f"
+	plotRocs(cli.Prefix, charts)
 	bgz.Close()
+}
 
-	writeROCs(counts, names, cli.Prefix)
-
+func plotRocs(prefix string, charts []chartjs.Chart) {
+	wtr, err := os.Create(fmt.Sprintf("%s-indexcov-roc.html", prefix))
+	if err != nil {
+		panic(err)
+	}
+	defer wtr.Close()
+	if err := chartjs.SaveCharts(wtr, map[string]interface{}{"height": 800, "width": 800}, charts...); err != nil {
+		panic(err)
+	}
 }
 
 func getROCs(counts [][]int) [][]float32 {
@@ -277,13 +316,10 @@ func getROCs(counts [][]int) [][]float32 {
 
 }
 
-func writeROCs(counts [][]int, names []string, prefix string) {
-	fh, err := os.Create(fmt.Sprintf("%s.indexcov.roc", prefix))
-	if err != nil {
-		panic(err)
-	}
+func writeROCs(counts [][]int, names []string, chrom string, prefix string, fh io.Writer) chartjs.Chart {
 	rocs := getROCs(counts)
-	if err := plotROCs(rocs, names, prefix); err != nil {
+	chart, err := plotROCs(rocs, names, chrom)
+	if err != nil {
 		panic(err)
 	}
 	fmt.Fprintf(fh, "cov\t%s\n", strings.Join(names, "\t"))
@@ -295,8 +331,9 @@ func writeROCs(counts [][]int, names []string, prefix string) {
 		for k := 0; k < nSamples; k++ {
 			vals[k] = fmt.Sprintf("%.2f", rocs[k][i])
 		}
-		fmt.Fprintf(fh, "%.2f\t%s\n", float64(i)/100, strings.Join(vals, "\t"))
+		fmt.Fprintf(fh, "%s\t%.2f\t%s\n", chrom, float64(i)/(slots*slotsMid), strings.Join(vals, "\t"))
 	}
+	return chart
 }
 
 func depthsFor(depths [][]float32, i int) string {

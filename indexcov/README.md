@@ -52,8 +52,3 @@ last file offset stored in the index), we know the average size (in bytes) of ta
 over each (16KB) element in the linear index, subtract the previous file offset, and scale by the expected (average) size. This
 gives the scaled value for each 16,384-base chunk. There are many ways that this value can be off, but, in practice, it works
 well as a rough estimate.
-
-Todo
-====
-
-parallelize the depth calc by sample.

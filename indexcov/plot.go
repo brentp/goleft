@@ -46,7 +46,6 @@ func asValues(vals []float32, multiplier float64) chartjs.Values {
 		v.rocs = append(v.rocs, float64(r))
 	}
 	return &v
-
 }
 
 func randomColor(s int) *types.RGBA {
@@ -74,7 +73,8 @@ func plotDepths(depths [][]float32, samples []string, chrom string, prefix strin
 	for i, depth := range depths {
 		xys := asValues(depth, 16384)
 		c := randomColor(i)
-		dataset := chartjs.Dataset{Data: xys, Label: samples[i], Fill: chartjs.False, PointRadius: 0.001, BorderWidth: 1, BorderColor: c, PointBackgroundColor: c, BackgroundColor: c}
+		dataset := chartjs.Dataset{Data: xys, Label: samples[i], Fill: chartjs.False, PointRadius: 0, BorderWidth: 0.5,
+			BorderColor: c, BackgroundColor: c, SteppedLine: chartjs.True}
 		dataset.XAxisID = xa
 		dataset.YAxisID = ya
 		chart.AddDataset(dataset)
@@ -84,30 +84,30 @@ func plotDepths(depths [][]float32, samples []string, chrom string, prefix strin
 	if err != nil {
 		return err
 	}
-	if err := chart.SaveHTML(wtr, map[string]interface{}{"width": 800}); err != nil {
+	if err := chart.SaveHTML(wtr, map[string]interface{}{"width": 800, "height": 800}); err != nil {
 		return err
 	}
 	return wtr.Close()
 
 }
 
-func plotROCs(rocs [][]float32, samples []string, prefix string) error {
+func plotROCs(rocs [][]float32, samples []string, chrom string) (chartjs.Chart, error) {
 
 	chart := chartjs.Chart{Label: "ROC"}
-	xa, err := chart.AddXAxis(chartjs.Axis{Type: chartjs.Linear, Position: chartjs.Bottom, ScaleLabel: &chartjs.ScaleLabel{FontSize: 16, LabelString: "scaled coverage", Display: chartjs.True}})
+	xa, err := chart.AddXAxis(chartjs.Axis{Type: chartjs.Linear, Position: chartjs.Bottom, ScaleLabel: &chartjs.ScaleLabel{FontSize: 16, LabelString: "scaled coverage for " + chrom, Display: chartjs.True}, Tick: &chartjs.Tick{Max: 1 / slotsMid}})
 	if err != nil {
-		return err
+		return chart, err
 	}
 	yax := chartjs.Axis{Type: chartjs.Linear, Position: chartjs.Left,
 		ScaleLabel: &chartjs.ScaleLabel{FontSize: 16, LabelString: "proportion of regions covered", Display: chartjs.True}}
 
 	ya, err := chart.AddYAxis(yax)
 	if err != nil {
-		return err
+		return chart, err
 	}
 
 	for i, roc := range rocs {
-		xys := asValues(roc, 1)
+		xys := asValues(roc, 1/float64(slots)*1/slotsMid)
 		c := randomColor(i)
 		dataset := chartjs.Dataset{Data: xys, Label: samples[i], Fill: chartjs.False, PointRadius: 0.01, BorderWidth: 2, BorderColor: c, PointBackgroundColor: c, BackgroundColor: c}
 		dataset.XAxisID = xa
@@ -115,12 +115,5 @@ func plotROCs(rocs [][]float32, samples []string, prefix string) error {
 		chart.AddDataset(dataset)
 	}
 	chart.Options.Responsive = chartjs.False
-	wtr, err := os.Create(fmt.Sprintf("%s-indexcov-roc.html", prefix))
-	if err != nil {
-		return err
-	}
-	if err := chart.SaveHTML(wtr, map[string]interface{}{"height": 800, "width": 800}); err != nil {
-		return err
-	}
-	return wtr.Close()
+	return chart, nil
 }
