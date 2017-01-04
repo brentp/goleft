@@ -32,9 +32,16 @@ higher variance.
 
 If we view the html file for **X chromosome** we can see a nice separation of samples by sex along with the PAR at the left:
 
-![X Example](https://cloud.githubusercontent.com/assets/1739/21597648/074f06ca-d10b-11e6-8732-e9a2e8d1ecb5.png "sex example")
+![X Example](https://cloud.githubusercontent.com/assets/1739/21597648/074f06ca-d10b-11e6-8732-e9a2e8d1ecb5.png "x example")
 
 That plot is taken directly from the HTML output by `indexcov`.
+
+Using that separation, `indexcov` infers the copy-number of the sex chromosomes, outputs a stub .ped/.fam file with that
+information, and makes a plot like this one:
+
+![Sex Example](https://cloud.githubusercontent.com/assets/1739/21627994/2973d464-d1d9-11e6-9962-5d3ac0f80329.png "sex example")
+Where here the males and females separate by the X and Y chromosomes perfectly.
+
 
 Finally, `indexcov` will output a coverage (ROC) plot that shows how much of the genome is coverage at at given (scaled) depth.
 This is output to a $prefix-depth-roc.html file and looks like:
