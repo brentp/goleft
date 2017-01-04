@@ -402,7 +402,7 @@ func writeROCs(counts [][]int, names []string, chrom string, prefix string, fh i
 	if err != nil {
 		panic(err)
 	}
-	fmt.Fprintf(fh, "cov\t%s\n", strings.Join(names, "\t"))
+	fmt.Fprintf(fh, "#chrom\tcov\t%s\n", strings.Join(names, "\t"))
 	nSamples := len(names)
 
 	vals := make([]string, nSamples)

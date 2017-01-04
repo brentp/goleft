@@ -23,6 +23,9 @@ This will create a bed file where each additional column is the normalized, esti
 sample. If no chromosome is given, it will do the whole genome. Since most of the time is scaling There
 coverages based on the entire index, there's very little speed benefit to choosing only a single chromosome.
 
+See the [Files](#Files) section below
+
+
 In addition, an interactive HTML file is output per chromosome that displays information like this:
 
 ![Example](https://cloud.githubusercontent.com/assets/1739/21273832/a42c3a6c-c382-11e6-9bd1-3870a8333c04.png "example depth")
@@ -59,3 +62,14 @@ last file offset stored in the index), we know the average size (in bytes) of ta
 over each (16KB) element in the linear index, subtract the previous file offset, and scale by the expected (average) size. This
 gives the scaled value for each 16,384-base chunk. There are many ways that this value can be off, but, in practice, it works
 well as a rough estimate.
+
+<a name="Files"></a> Files
+==========================
+
+In addition to the  interactive HTML files, `indexcov` outputs a number of text files:
+
++ `$prefix-indexcov.ped`: a .ped/.fam file with the inferred sex in the appropriate column if the sex chromosomes were found.
++ `$prefix-indexcov.roc`: tab-delimited columns of chrom, scaled coverage cutoff, and $n_samples columns where each indicates the
+                          proportion of 16KB blocks at or above that scaled coverage value.
++ `$prefix-indexcov.bed.gz`: a bed file with columns of chrom, start, end, and a column per sample where the values indicate there
+                             scaled coverage for that sample in that 16KB chunk.
