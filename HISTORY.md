@@ -1,4 +1,4 @@
-v0.1.9 (dev)
+v0.1.9
 ======
 + `indexcov`: fix for sparse bams and other edge-cases.
 + `indexcov`: performance improvements.
