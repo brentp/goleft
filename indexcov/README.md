@@ -10,7 +10,7 @@ This is useful as a quick QC to get coverage values across the genome.
 
 In our tests, we can **estimate depth across a 60X genomes for 30 samples in 1 minute**.
 
-Interactive HTML plots of depth are output for each chromosome.
+Interactive HTML plots of depth are output for each chromosome. Live examples of the interactive output are available [here](https://brentp.github.io/goleft/indexcov/index.html)
 
 Usage
 =====
