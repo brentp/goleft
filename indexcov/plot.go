@@ -75,7 +75,7 @@ func plotDepths(depths [][]float32, samples []string, chrom string, prefix strin
 		xys := asValues(depth, 16384)
 		c := randomColor(i)
 		dataset := chartjs.Dataset{Data: xys, Label: samples[i], Fill: chartjs.False, PointRadius: 0, BorderWidth: 0.5,
-			BorderColor: c, BackgroundColor: c, SteppedLine: chartjs.True}
+			BorderColor: c, BackgroundColor: c, SteppedLine: chartjs.True, PointHitRadius: 6}
 		dataset.XAxisID = xa
 		dataset.YAxisID = ya
 		chart.AddDataset(dataset)
@@ -110,7 +110,7 @@ func plotROCs(rocs [][]float32, samples []string, chrom string) (chartjs.Chart, 
 	for i, roc := range rocs {
 		xys := asValues(roc, 1/float64(slots)*1/slotsMid)
 		c := randomColor(i)
-		dataset := chartjs.Dataset{Data: xys, Label: samples[i], Fill: chartjs.False, PointRadius: 0.01, BorderWidth: 2, BorderColor: c, PointBackgroundColor: c, BackgroundColor: c}
+		dataset := chartjs.Dataset{Data: xys, Label: samples[i], Fill: chartjs.False, PointRadius: 0.01, BorderWidth: 2, BorderColor: c, PointBackgroundColor: c, BackgroundColor: c, PointHitRadius: 6}
 		dataset.XAxisID = xa
 		dataset.YAxisID = ya
 		chart.AddDataset(dataset)
@@ -155,12 +155,11 @@ func plotSex(sexes map[string][]float64, chroms []string, samples []string) (cha
 			vals.ys = append(vals.ys, sexes[chroms[1]][i])
 		}
 		c := randomColor(cn)
-		dataset := chartjs.Dataset{Data: vals, Label: fmt.Sprintf("Inferred CN for %s: %d", chroms[0], cn), Fill: chartjs.False, PointRadius: 6, BorderWidth: 0, BorderColor: &types.RGBA{150, 150, 150, 150}, PointBackgroundColor: c, BackgroundColor: c, ShowLine: chartjs.False}
+		dataset := chartjs.Dataset{Data: vals, Label: fmt.Sprintf("Inferred CN for %s: %d", chroms[0], cn), Fill: chartjs.False, PointRadius: 6, BorderWidth: 0, BorderColor: &types.RGBA{150, 150, 150, 150}, PointBackgroundColor: c, BackgroundColor: c, ShowLine: chartjs.False, PointHitRadius: 6}
 		dataset.XAxisID = xa
 		dataset.YAxisID = ya
 		chart.AddDataset(dataset)
 	}
-	chart.Options.Responsive = chartjs.False
 	sjson, err := json.Marshal(jssamples)
 	if err != nil {
 		panic(err)
