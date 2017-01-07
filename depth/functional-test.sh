@@ -5,7 +5,7 @@ test -e ssshtest || wget -q https://raw.githubusercontent.com/ryanlayer/ssshtest
 . ssshtest
 set -eo pipefail
 
-go build -o goleft ../main.go
+go build -o goleft ../cmd/goleft/goleft.go
 
 check_with_fai_bt() {
     fai=$1

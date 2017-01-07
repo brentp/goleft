@@ -125,6 +125,7 @@ func genCommands(args dargs) chan string {
 		go genFromBed(ch, args)
 		return ch
 	}
+
 	go func() {
 		// make sure step jives with windowsize otherwise we get WindowSize
 		// where it doesn't have the right size
@@ -177,11 +178,10 @@ type ipos struct {
 	start int
 }
 
-func mean(sl []int, l int) float64 {
+func mean(sl []int, l int) (avg float64) {
 	if len(sl) == 0 || l == 0 {
 		return 0
 	}
-	avg := float64(0)
 	for _, v := range sl {
 		avg += float64(v)
 	}
@@ -199,39 +199,72 @@ func getStats(fa *faidx.Faidx, chrom string, start, end int) string {
 	return fmt.Sprintf("\t%.3g\t%.3g\t%.3g", st.GC, st.CpG, st.Masked)
 }
 
+func getPosDepth(rline string) (int, int, error) {
+	// toks starts after chrom. so [0] is pos and [1] is depth.
+	toks := strings.SplitN(rline, "\t", 2)
+	pos, err := strconv.Atoi(toks[0])
+	if err != nil {
+		return 0, 0, err
+	}
+	pos--
+
+	if len(toks[1]) > 1 && toks[1][len(toks[1])-1] == '\n' {
+		toks[1] = toks[1][:len(toks[1])-1]
+	}
+
+	depth, err := strconv.Atoi(toks[1])
+	if err != nil {
+		return 0, 0, err
+	}
+
+	return pos, depth, nil
+}
+
+func getCovClass(depth, minCov, maxMeanDepth int) string {
+	if depth == 0 {
+		return "NO_COVERAGE"
+	}
+	if depth < minCov {
+		return "LOW_COVERAGE"
+	}
+	if maxMeanDepth > 0 && depth >= maxMeanDepth {
+		return "EXCESSIVE_COVERAGE"
+	}
+	return "CALLABLE"
+}
+
 func run(args dargs) {
 
 	callback := func(r io.Reader, w io.WriteCloser) error {
 		rdr := bufio.NewReader(r)
 		wtr := bufio.NewWriter(w)
+		defer w.Close()
+		defer wtr.Flush()
 
 		var fa *faidx.Faidx
 		var err error
 		if args.Stats {
 			fa, err = faidx.New(args.Reference)
 			defer fa.Close()
-		}
-		if err != nil {
-			return err
+			if err != nil {
+				return err
+			}
 		}
 
-		defer w.Close()
-		defer wtr.Flush()
 		depthCache := make([]int, 0, args.WindowSize)
 		var depth, pos int
-		var lastCovClass string
 
 		region, err := rdr.ReadBytes('\n')
 		if err != nil {
 			return err
 		}
-		// we echo the bounds of the region before the samtools depth call.
+		// this is the bounds of the region echo'd before the samtools depth call.
 		chrom, regionStart, regionEnd := chromStartEndFromLine(region)
-		lastWindow := max(regionStart/args.WindowSize, 0)
-
-		cache := make([]ipos, 2)
+		lastWindow := max(0, regionStart/args.WindowSize)
+		var cache [2]ipos
 		cache[0].start = regionStart - 1
 		cache[1].start = regionStart - 1
+		var lastCovClass string
 
 		hdPath := fmt.Sprintf("%s.%s-%d-%d.tmp.depth.bed", args.Prefix, chrom, regionStart, regionEnd)
 		fhHD, ferr := xopen.Wopen(hdPath)
@@ -251,49 +284,28 @@ func run(args dargs) {
 
 			chrom = line[:strings.Index(line, "\t")]
 
-			// toks starts after chrom. so [0] is pos and [1] is depth.
-			toks := strings.SplitN(line[len(chrom)+1:], "\t", 2)
-			pos, err = strconv.Atoi(toks[0])
+			pos, depth, err = getPosDepth(line[len(chrom)+1:])
 			if err != nil {
 				break
 			}
-			pos--
 
-			if len(toks[1]) > 1 && toks[1][len(toks[1])-1] == '\n' {
-				toks[1] = toks[1][:len(toks[1])-1]
-			}
-
-			depth, err = strconv.Atoi(toks[1])
-			if err != nil {
-				break
-			}
 			// if we have a full window...
 			if pos/args.WindowSize != lastWindow {
 				thisWindow := pos / args.WindowSize
 				// print lastWindow along with any windows without any coverage.
 				for iwindow := lastWindow; iwindow < thisWindow; iwindow++ {
-					s := iwindow * args.WindowSize
-					if s+args.WindowSize > regionStart {
-						st := max(s, regionStart)
-						e := min(regionEnd, s+args.WindowSize)
-						stats := getStats(fa, chrom, s, e)
-						// only the 1st loop of this will have a value. others will have 0.
-						fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%.4g%s\n", chrom, st, e, mean(depthCache, e-st), stats))
-						depthCache = depthCache[:0]
-					}
+					s := max(regionStart, iwindow*args.WindowSize)
+					e := min(regionEnd, (iwindow+1)*args.WindowSize)
+					stats := getStats(fa, chrom, s, e)
+					// only the 1st loop of this will have values in depthCache. Others will have 0.
+					fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%.4g%s\n", chrom, s, e, mean(depthCache, e-s), stats))
+					depthCache = depthCache[:0]
 				}
 				lastWindow = thisWindow
 			}
 			depthCache = append(depthCache, depth)
+			covClass := getCovClass(depth, args.MinCov, args.MaxMeanDepth)
 
-			covClass := "CALLABLE"
-			if depth == 0 {
-				covClass = "NO_COVERAGE"
-			} else if depth < args.MinCov {
-				covClass = "LOW_COVERAGE"
-			} else if args.MaxMeanDepth > 0 && depth >= args.MaxMeanDepth {
-				covClass = "EXCESSIVE_COVERAGE"
-			}
 			// check for a gap or a change in the coverage class.
 			if covClass != lastCovClass || pos != cache[1].start+1 {
 				if lastCovClass != "" {
@@ -304,10 +316,8 @@ func run(args dargs) {
 					fhCA.WriteString(fmt.Sprintf("%s\t%d\t%d\t%s\n", chrom, cache[1].start+1, pos, "NO_COVERAGE"))
 				}
 				lastCovClass = covClass
-				cache = cache[:0]
-				// append twice so we can safely use cache[1] above.
-				cache = append(cache, ipos{pos})
-				cache = append(cache, ipos{pos})
+				cache[0] = ipos{pos}
+				cache[1] = ipos{pos}
 			} else {
 				cache[1].start = pos
 			}
@@ -319,10 +329,10 @@ func run(args dargs) {
 		if len(depthCache) > 0 {
 			s := pos / args.WindowSize * args.WindowSize
 			if s < regionEnd {
-				st := max(s, regionStart)
+				s := max(s, regionStart)
 				e := min(regionEnd, s+args.WindowSize)
-				stats := getStats(fa, chrom, st, e)
-				fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%.4g%s\n", chrom, st, e, mean(depthCache, e-st), stats))
+				stats := getStats(fa, chrom, s, e)
+				fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%.4g%s\n", chrom, s, e, mean(depthCache, e-s), stats))
 				depthCache = depthCache[:0]
 				// set position to end here so we don't output the same position below.
 				pos = e
