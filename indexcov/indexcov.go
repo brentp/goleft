@@ -48,6 +48,10 @@ type Index struct {
 	refs              []RefIndex
 }
 
+func vOffset(o bgzf.Offset) int64 {
+	return o.File<<16 | int64(o.Block)
+}
+
 // NormalizedDepth returns a list of numbers for the normalized depth of the given region.
 // Values are scaled to have a mean of 1. If end is 0, the full chromosome is returned.
 func (x *Index) NormalizedDepth(refID int, start int, end int) []float32 {
@@ -56,14 +60,14 @@ func (x *Index) NormalizedDepth(refID int, start int, end int) []float32 {
 		x.refs = getRefs(x.Index)
 
 		// sizes is used to get the median.
-		sizes := make([]uint32, 0, 16384)
+		sizes := make([]uint64, 0, 16384)
 		// get the last chromosome with any data.
 		for k := 0; k < len(x.refs)-1; k++ {
 			if len(x.refs[k].Intervals) < 2 {
 				continue
 			}
 			for i, iv := range x.refs[k].Intervals[1:] {
-				sizes = append(sizes, uint32(iv.File-x.refs[k].Intervals[i].File))
+				sizes = append(sizes, uint64(vOffset(iv)-vOffset(x.refs[k].Intervals[i])))
 			}
 		}
 
@@ -90,7 +94,7 @@ func (x *Index) NormalizedDepth(refID int, start int, end int) []float32 {
 	}
 	depths := make([]float32, 0, ei-si)
 	for i, o := range ref.Intervals[si:ei] {
-		depths = append(depths, float32(float64(ref.Intervals[si+i+1].File-o.File)/x.medianSizePerTile))
+		depths = append(depths, float32(float64(vOffset(ref.Intervals[si+i+1])-vOffset(o))/x.medianSizePerTile))
 		if depths[i] > MaxCN {
 			depths[i] = MaxCN
 		}

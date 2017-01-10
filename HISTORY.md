@@ -1,3 +1,10 @@
+v0.1.10 (dev)
+=============
+
++ report correct version # (v0.1.9 reported 0.1.8 from CLI)
++ `indexcov`: bigger hit radius in plots == easier to mouse-over points
++ `indexcov`: use vOffset for better resolution of (estimated) depth.
+
 v0.1.9
 ======
 + `indexcov`: fix for sparse bams and other edge-cases.

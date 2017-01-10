@@ -1,7 +1,7 @@
 indexcov
 ========
 
-Quickly estimate coverage from the bam index. 
+Quickly estimate coverage from a *whole-genome* bam index. 
 A bam index has 16KB resolution so that's what this gives, but it provides what appears to be a high-quality 
 coverage estimate in seconds per genome.
 
@@ -62,6 +62,9 @@ last file offset stored in the index), we know the average size (in bytes) of ta
 over each (16KB) element in the linear index, subtract the previous file offset, and scale by the expected (average) size. This
 gives the scaled value for each 16,384-base chunk. There are many ways that this value can be off, but, in practice, it works
 well as a rough estimate.
+
+Because of this `indexcov` is of less-use on exome or targetted capture, but those are small enough that it will
+be very fast to run `goleft depth` anyway.
 
 <a name="Files"></a> Files
 ==========================

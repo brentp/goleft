@@ -110,7 +110,7 @@ func plotROCs(rocs [][]float32, samples []string, chrom string) (chartjs.Chart, 
 	for i, roc := range rocs {
 		xys := asValues(roc, 1/float64(slots)*1/slotsMid)
 		c := randomColor(i)
-		dataset := chartjs.Dataset{Data: xys, Label: samples[i], Fill: chartjs.False, PointRadius: 0.01, BorderWidth: 2, BorderColor: c, PointBackgroundColor: c, BackgroundColor: c, PointHitRadius: 6}
+		dataset := chartjs.Dataset{Data: xys, Label: samples[i], Fill: chartjs.False, PointRadius: 0.0, BorderWidth: 2, BorderColor: c, PointBackgroundColor: c, BackgroundColor: c, PointHitRadius: 8, PointHoverRadius: 3}
 		dataset.XAxisID = xa
 		dataset.YAxisID = ya
 		chart.AddDataset(dataset)

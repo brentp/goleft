@@ -61,7 +61,7 @@ This will output an estimate of median coverage to stdout.
 
 ### indexcov
 
-quickly estimate coverage from the bam index.
+quickly estimate coverage from whole genome bam indexes.
 
 ##### Usage 
 
