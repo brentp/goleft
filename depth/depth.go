@@ -14,10 +14,13 @@ import (
 	"os"
 	"regexp"
 	"runtime"
+	"runtime/pprof"
+	"sort"
 	"strconv"
 	"strings"
 
 	arg "github.com/alexflint/go-arg"
+	"github.com/biogo/store/interval"
 	"github.com/brentp/faidx"
 	"github.com/brentp/gargs/process"
 	"github.com/brentp/xopen"
@@ -99,32 +102,8 @@ func regionFromLine(line []byte) string {
 	return fmt.Sprintf("%s:%d-%d", chrom, start+1, end)
 }
 
-// when the user specified a Bed file of regions for coverage, this is used.
-func genFromBed(ch chan string, args dargs) {
-	rdr, err := xopen.Ropen(args.Bed)
-	pcheck(err)
-	for {
-		line, err := rdr.ReadBytes('\n')
-		if err == io.EOF {
-			break
-		}
-		pcheck(err)
-		if len(line) == 0 {
-			continue
-		}
-		region := regionFromLine(line)
-		ch <- fmt.Sprintf(command, region, args.Q, args.MaxMeanDepth+2500,
-			region, args.Bam)
-	}
-	close(ch)
-}
-
 func genCommands(args dargs) chan string {
 	ch := make(chan string)
-	if args.Bed != "" {
-		go genFromBed(ch, args)
-		return ch
-	}
 
 	go func() {
 		// make sure step jives with windowsize otherwise we get WindowSize
@@ -139,7 +118,7 @@ func genCommands(args dargs) chan string {
 				break
 			}
 			pcheck(err)
-			toks := strings.Split(line, "\t")
+			toks := strings.SplitN(line, "\t", 3)
 
 			chrom := toks[0]
 			if args.Chrom != "" && chrom != args.Chrom {
@@ -235,6 +214,15 @@ func getCovClass(depth, minCov, maxMeanDepth int) string {
 
 func run(args dargs) {
 
+	f, err := os.Create("goleft.cpu.pprof")
+	if err != nil {
+		panic(err)
+	}
+	pprof.StartCPUProfile(f)
+	defer pprof.StopCPUProfile()
+
+	tree := readTree(args.Bed)
+
 	callback := func(r io.Reader, w io.WriteCloser) error {
 		rdr := bufio.NewReader(r)
 		wtr := bufio.NewWriter(w)
@@ -252,7 +240,6 @@ func run(args dargs) {
 		}
 
 		depthCache := make([]int, 0, args.WindowSize)
-		var depth, pos int
 
 		region, err := rdr.ReadBytes('\n')
 		if err != nil {
@@ -260,11 +247,21 @@ func run(args dargs) {
 		}
 		// this is the bounds of the region echo'd before the samtools depth call.
 		chrom, regionStart, regionEnd := chromStartEndFromLine(region)
-		lastWindow := max(0, regionStart/args.WindowSize)
-		var cache [2]ipos
-		cache[0].start = regionStart - 1
-		cache[1].start = regionStart - 1
-		var lastCovClass string
+		var regions []interval.IntInterface
+		regionStarts := make([]int, 0, 5)
+		regionEnds := make([]int, 0, 5)
+		if tree != nil {
+			regions = tree[chrom].Get(irange{regionStart, regionEnd, uintptr(tree[chrom].Len())})
+			sort.Slice(regions, func(i, j int) bool { return regions[i].Range().Start < regions[j].Range().Start })
+			for i := range regions {
+				regionStarts = append(regionStarts, regions[i].Range().Start)
+				regionEnds = append(regionEnds, regions[i].Range().End)
+			}
+
+		} else {
+			regionStarts = append(regionStarts, regionStart)
+			regionEnds = append(regionEnds, regionEnd)
+		}
 
 		hdPath := fmt.Sprintf("%s.%s-%d-%d.tmp.depth.bed", args.Prefix, chrom, regionStart, regionEnd)
 		fhHD, ferr := xopen.Wopen(hdPath)
@@ -279,82 +276,103 @@ func run(args dargs) {
 		defer fhCA.Close()
 		defer fhHD.Close()
 
-		line, err := rdr.ReadString('\n')
-		for err == nil {
+		for k := 0; k < len(regionStarts); k++ {
+			regionStart = regionStarts[k]
+			regionEnd = regionEnds[k]
+			depthCache = depthCache[:0]
+			var depth, pos int
 
-			chrom = line[:strings.Index(line, "\t")]
+			lastWindow := max(0, regionStart/args.WindowSize)
+			var cache [2]ipos
+			cache[0].start = regionStart - 1
+			cache[1].start = regionStart - 1
+			var lastCovClass string
 
-			pos, depth, err = getPosDepth(line[len(chrom)+1:])
-			if err != nil {
-				break
+			line, err := rdr.ReadString('\n')
+			for err == nil {
+
+				pos, depth, err = getPosDepth(line[len(chrom)+1:])
+				if err != nil {
+					break
+				}
+				if tree != nil && !toverlaps(tree[chrom], pos, pos+1) {
+					// were in a region but didn't overlap tree
+					line, err = rdr.ReadString('\n')
+					continue
+				}
+
+				// if we have a full window...
+				if pos/args.WindowSize != lastWindow {
+					thisWindow := pos / args.WindowSize
+					// print lastWindow along with any windows without any coverage.
+					for iwindow := lastWindow; iwindow < thisWindow; iwindow++ {
+						s := max(regionStart, iwindow*args.WindowSize)
+						e := min(regionEnd, (iwindow+1)*args.WindowSize)
+						if tree == nil || toverlaps(tree[chrom], s, e) {
+							stats := getStats(fa, chrom, s, e)
+							// only the 1st loop of this will have values in depthCache. Others will have 0.
+							fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%.4g%s\n", chrom, s, e, mean(depthCache, e-s), stats))
+						}
+						depthCache = depthCache[:0]
+					}
+					lastWindow = thisWindow
+				}
+				depthCache = append(depthCache, depth)
+				covClass := getCovClass(depth, args.MinCov, args.MaxMeanDepth)
+
+				// check for a gap or a change in the coverage class.
+				if covClass != lastCovClass || pos != cache[1].start+1 {
+					if lastCovClass != "" {
+						fhCA.WriteString(fmt.Sprintf("%s\t%d\t%d\t%s\n", chrom, cache[0].start, cache[1].start+1, lastCovClass))
+					}
+					// also fill in block without any coverage.
+					if pos != cache[1].start+1 {
+						fhCA.WriteString(fmt.Sprintf("%s\t%d\t%d\t%s\n", chrom, cache[1].start+1, pos, "NO_COVERAGE"))
+					}
+					lastCovClass = covClass
+					cache[0] = ipos{pos}
+					cache[1] = ipos{pos}
+				} else {
+					cache[1].start = pos
+				}
+				line, err = rdr.ReadString('\n')
+				if pos+1 > regionEnd {
+					break
+				}
 			}
-
-			// if we have a full window...
-			if pos/args.WindowSize != lastWindow {
-				thisWindow := pos / args.WindowSize
-				// print lastWindow along with any windows without any coverage.
-				for iwindow := lastWindow; iwindow < thisWindow; iwindow++ {
-					s := max(regionStart, iwindow*args.WindowSize)
-					e := min(regionEnd, (iwindow+1)*args.WindowSize)
+			if cache[0].start != -1 && lastCovClass != "" {
+				fhCA.WriteString(fmt.Sprintf("%s\t%d\t%d\t%s\n", chrom, cache[0].start, cache[1].start+1, lastCovClass))
+			}
+			if len(depthCache) > 0 {
+				s := pos / args.WindowSize * args.WindowSize
+				if s < regionEnd {
+					s := max(s, regionStart)
+					e := min(regionEnd, s+args.WindowSize)
 					stats := getStats(fa, chrom, s, e)
-					// only the 1st loop of this will have values in depthCache. Others will have 0.
 					fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%.4g%s\n", chrom, s, e, mean(depthCache, e-s), stats))
 					depthCache = depthCache[:0]
+					// set position to end here so we don't output the same position below.
+					pos = e
 				}
-				lastWindow = thisWindow
-			}
-			depthCache = append(depthCache, depth)
-			covClass := getCovClass(depth, args.MinCov, args.MaxMeanDepth)
 
-			// check for a gap or a change in the coverage class.
-			if covClass != lastCovClass || pos != cache[1].start+1 {
-				if lastCovClass != "" {
-					fhCA.WriteString(fmt.Sprintf("%s\t%d\t%d\t%s\n", chrom, cache[0].start, cache[1].start+1, lastCovClass))
+			}
+			// we didn't get data for the full region, so it must end in no-coverage.
+			if cache[1].start+1 < regionEnd {
+				// If we had regions within section
+				if cache[1].start != -1 {
+					fhCA.WriteString(fmt.Sprintf("%s\t%d\t%d\tNO_COVERAGE\n", chrom, cache[1].start+1, regionEnd))
+					// otherwise the whole region is NO_COVERAGE
+				} else {
+					fhCA.WriteString(fmt.Sprintf("%s\t%d\t%d\tNO_COVERAGE\n", chrom, regionStart, regionEnd))
 				}
-				// also fill in block without any coverage.
-				if pos != cache[1].start+1 {
-					fhCA.WriteString(fmt.Sprintf("%s\t%d\t%d\t%s\n", chrom, cache[1].start+1, pos, "NO_COVERAGE"))
+				for ds := max(regionStart, pos) / args.WindowSize * args.WindowSize; ds < regionEnd && pos < regionEnd; ds += args.WindowSize {
+					// keep de calc first.
+					de := min(regionEnd, ds+args.WindowSize)
+					s := max(ds, regionStart)
+					stats := getStats(fa, chrom, s, de)
+					fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%.4g%s\n", chrom, s, de, mean(depthCache, de-s), stats))
+					depthCache = depthCache[:0]
 				}
-				lastCovClass = covClass
-				cache[0] = ipos{pos}
-				cache[1] = ipos{pos}
-			} else {
-				cache[1].start = pos
-			}
-			line, err = rdr.ReadString('\n')
-		}
-		if cache[0].start != -1 && lastCovClass != "" {
-			fhCA.WriteString(fmt.Sprintf("%s\t%d\t%d\t%s\n", chrom, cache[0].start, cache[1].start+1, lastCovClass))
-		}
-		if len(depthCache) > 0 {
-			s := pos / args.WindowSize * args.WindowSize
-			if s < regionEnd {
-				s := max(s, regionStart)
-				e := min(regionEnd, s+args.WindowSize)
-				stats := getStats(fa, chrom, s, e)
-				fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%.4g%s\n", chrom, s, e, mean(depthCache, e-s), stats))
-				depthCache = depthCache[:0]
-				// set position to end here so we don't output the same position below.
-				pos = e
-			}
-
-		}
-		// we didn't get data for the full region, so it must end in no-coverage.
-		if cache[1].start+1 < regionEnd {
-			// If we had regions within section
-			if cache[1].start != -1 {
-				fhCA.WriteString(fmt.Sprintf("%s\t%d\t%d\tNO_COVERAGE\n", chrom, cache[1].start+1, regionEnd))
-				// otherwise the whole region is NO_COVERAGE
-			} else {
-				fhCA.WriteString(fmt.Sprintf("%s\t%d\t%d\tNO_COVERAGE\n", chrom, regionStart, regionEnd))
-			}
-			for ds := max(regionStart, pos) / args.WindowSize * args.WindowSize; ds < regionEnd && pos < regionEnd; ds += args.WindowSize {
-				// keep de calc first.
-				de := min(regionEnd, ds+args.WindowSize)
-				s := max(ds, regionStart)
-				stats := getStats(fa, chrom, s, de)
-				fhHD.WriteString(fmt.Sprintf("%s\t%d\t%d\t%.4g%s\n", chrom, s, de, mean(depthCache, de-s), stats))
-				depthCache = depthCache[:0]
 			}
 		}
 		wtr.WriteString(caPath + "\n")
