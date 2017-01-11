@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"time"
 	"unsafe"
 
 	arg "github.com/alexflint/go-arg"
@@ -52,36 +53,40 @@ func vOffset(o bgzf.Offset) int64 {
 	return o.File<<16 | int64(o.Block)
 }
 
+// init sets the medianSizePerTile
+func (x *Index) init() {
+	x.refs = getRefs(x.Index)
+
+	// sizes is used to get the median.
+	sizes := make([]int64, 0, 16384)
+	for k := 0; k < len(x.refs)-1; k++ {
+		if len(x.refs[k].Intervals) < 2 {
+			continue
+		}
+		for i, iv := range x.refs[k].Intervals[1:] {
+			sizes = append(sizes, vOffset(iv)-vOffset(x.refs[k].Intervals[i]))
+		}
+	}
+
+	// we get the median as it's more stable than mean.
+	sort.Slice(sizes, func(i, j int) bool { return sizes[i] < sizes[j] })
+	x.medianSizePerTile = float64(sizes[len(sizes)/2])
+	// if we have a single chunk of a chrom, then we get a lot of zeros so we address that here.
+	if x.medianSizePerTile == 0 {
+		i := len(sizes) / 2
+		for ; i < len(sizes) && sizes[i] == 0; i++ {
+		}
+		sizes = sizes[i:]
+		x.medianSizePerTile = float64(sizes[len(sizes)/2])
+	}
+}
+
 // NormalizedDepth returns a list of numbers for the normalized depth of the given region.
 // Values are scaled to have a mean of 1. If end is 0, the full chromosome is returned.
 func (x *Index) NormalizedDepth(refID int, start int, end int) []float32 {
 
 	if x.medianSizePerTile == 0.0 {
-		x.refs = getRefs(x.Index)
-
-		// sizes is used to get the median.
-		sizes := make([]uint64, 0, 16384)
-		// get the last chromosome with any data.
-		for k := 0; k < len(x.refs)-1; k++ {
-			if len(x.refs[k].Intervals) < 2 {
-				continue
-			}
-			for i, iv := range x.refs[k].Intervals[1:] {
-				sizes = append(sizes, uint64(vOffset(iv)-vOffset(x.refs[k].Intervals[i])))
-			}
-		}
-
-		// we get the median as it's more stable than mean.
-		sort.Slice(sizes, func(i, j int) bool { return sizes[i] < sizes[j] })
-		x.medianSizePerTile = float64(sizes[len(sizes)/2])
-		// if we have a single chunk of a chrom, then we get a lot of zeros so we address that here.
-		if x.medianSizePerTile == 0 {
-			i := len(sizes) / 2
-			for ; i < len(sizes) && sizes[i] == 0; i++ {
-			}
-			sizes = sizes[i:]
-			x.medianSizePerTile = float64(sizes[len(sizes)/2])
-		}
+		x.init()
 	}
 	ref := x.refs[refID]
 
@@ -192,7 +197,10 @@ func getWriter(prefix string) (*bgzf.Writer, error) {
 	if err != nil {
 		return nil, err
 	}
-	return bgzf.NewWriter(fh, 1), nil
+	w := bgzf.NewWriter(fh, 1)
+	w.ModTime = time.Unix(0, 0)
+	w.OS = 0xff
+	return w, nil
 }
 
 func zero(ints []int) {
@@ -251,6 +259,17 @@ func Main() {
 		names = append(names, getShortName(b))
 	}
 
+	charts, sexes := run(refs, idxs, names)
+
+	chartjs.XFloatFormat = "%.2f"
+	saveCharts(fmt.Sprintf("%s-indexcov-roc.html", cli.Prefix), "", charts...)
+	writePed(sexes, cli.Sex, names, cli.Prefix)
+}
+
+func run(refs []*sam.Reference, idxs []*Index, names []string) ([]chartjs.Chart, map[string][]float64) {
+	// we plot all the coverage roc charts in a single html file. so need a slize to keep them.
+	charts := make([]chartjs.Chart, 0, len(refs))
+	sexes := make(map[string][]float64)
 	counts := make([][]int, len(idxs))
 	depths := make([][]float32, len(idxs))
 
@@ -258,15 +277,12 @@ func Main() {
 	if err != nil {
 		panic(err)
 	}
+	defer bgz.Close()
 
 	rfh, err := os.Create(fmt.Sprintf("%s-indexcov.roc", cli.Prefix))
 	if err != nil {
 		panic(err)
 	}
-
-	// we plot all the coverage roc charts in a single html file.
-	charts := make([]chartjs.Chart, 0, len(refs))
-	sexes := make(map[string][]float64)
 
 	fmt.Fprintf(bgz, "#chrom\tstart\tend\t%s\n", strings.Join(names, "\t"))
 	for ir, ref := range refs {
@@ -310,10 +326,7 @@ func Main() {
 			}
 		}
 	}
-	chartjs.XFloatFormat = "%.2f"
-	saveCharts(fmt.Sprintf("%s-indexcov-roc.html", cli.Prefix), "", charts...)
-	bgz.Close()
-	writePed(sexes, cli.Sex, names, cli.Prefix)
+	return charts, sexes
 }
 
 func writePed(sexes map[string][]float64, keys []string, samples []string, prefix string) {
