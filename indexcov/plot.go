@@ -94,7 +94,7 @@ func plotDepths(depths [][]float32, samples []string, chrom string, prefix strin
 
 func plotROCs(rocs [][]float32, samples []string, chrom string) (chartjs.Chart, error) {
 
-	chart := chartjs.Chart{Label: "ROC"}
+	chart := chartjs.Chart{}
 	xa, err := chart.AddXAxis(chartjs.Axis{Type: chartjs.Linear, Position: chartjs.Bottom, ScaleLabel: &chartjs.ScaleLabel{FontSize: 16, LabelString: "scaled coverage for " + chrom, Display: chartjs.True}, Tick: &chartjs.Tick{Max: 1 / slotsMid}})
 	if err != nil {
 		return chart, err
