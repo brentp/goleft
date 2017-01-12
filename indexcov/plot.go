@@ -1,7 +1,6 @@
 package indexcov
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -207,24 +206,6 @@ for (var i =0; i < charts.length; i++) {
 		panic(err)
 	}
 	wtr.Close()
-
-	wtr, err = os.Create(fmt.Sprintf("%s-indexcov-pca.txt", prefix))
-	if err != nil {
-		panic(err)
-	}
-	wtr.Write([]byte("#sample\tPC1\tPC2\tPC3\tPC4\tPC5\n"))
-	defer wtr.Close()
-	bwtr := bufio.NewWriter(wtr)
-	defer bwtr.Flush()
-
-	for i, sample := range samples {
-		fmt.Fprintf(bwtr, "%s\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\n", sample,
-			mat.At(i, 0),
-			mat.At(i, 1),
-			mat.At(i, 2),
-			mat.At(i, 3),
-			mat.At(i, 4))
-	}
 
 }
 

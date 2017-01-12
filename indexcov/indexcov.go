@@ -267,17 +267,17 @@ func Main() {
 		names = append(names, getShortName(b))
 	}
 
-	charts, sexes, counts := run(refs, idxs, names)
+	charts, sexes, counts, pcs := run(refs, idxs, names)
 
 	chartjs.XFloatFormat = "%.2f"
 	saveCharts(fmt.Sprintf("%s-indexcov-roc.html", cli.Prefix), "", charts...)
-	writePed(sexes, counts, cli.Sex, names, cli.Prefix)
+	writePed(sexes, counts, cli.Sex, names, cli.Prefix, pcs)
 }
 
 // if there are more samples than this then the depth plots won't be drawn.
 const maxSamples = 100
 
-func run(refs []*sam.Reference, idxs []*Index, names []string) ([]chartjs.Chart, map[string][]float64, []*counter) {
+func run(refs []*sam.Reference, idxs []*Index, names []string) ([]chartjs.Chart, map[string][]float64, []*counter, *mat64.Dense) {
 	// keep a slice of charts since we plot all of the coverage roc charts in a single html file.
 	charts := make([]chartjs.Chart, 0, len(refs))
 	sexes := make(map[string][]float64)
@@ -374,14 +374,15 @@ func run(refs []*sam.Reference, idxs []*Index, names []string) ([]chartjs.Chart,
 			}
 		}
 	}
+	var pcs *mat64.Dense
 	if len(names) > 5 {
-		pca(pca8, names, cli.Prefix)
+		pcs = pca(pca8, names, cli.Prefix)
 	}
 	plotCounters(offs, names, cli.Prefix)
-	return charts, sexes, offs
+	return charts, sexes, offs, pcs
 }
 
-func pca(pca8 [][]uint8, samples []string, prefix string) {
+func pca(pca8 [][]uint8, samples []string, prefix string) *mat64.Dense {
 	t := time.Now()
 	mat := mat64.NewDense(len(pca8), len(pca8[0]), nil)
 	row := make([]float64, len(pca8[0]))
@@ -406,9 +407,30 @@ func pca(pca8 [][]uint8, samples []string, prefix string) {
 	plotPCA(&proj, prefix, samples, vars)
 
 	log.Printf("indexcov: completed PCA in: %.3f seconds", time.Since(t).Seconds())
+	return &proj
 }
 
-func writePed(sexes map[string][]float64, counts []*counter, keys []string, samples []string, prefix string) {
+/*
+   wtr, err = os.Create(fmt.Sprintf("%s-indexcov-pca.txt", prefix))
+   if err != nil {
+       panic(err)
+   }
+   wtr.Write([]byte("#sample\tPC1\tPC2\tPC3\tPC4\tPC5\n"))
+   defer wtr.Close()
+   bwtr := bufio.NewWriter(wtr)
+   defer bwtr.Flush()
+
+   for i, sample := range samples {
+       fmt.Fprintf(bwtr, "%s\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\n", sample,
+           mat.At(i, 0),
+           mat.At(i, 1),
+           mat.At(i, 2),
+           mat.At(i, 3),
+           mat.At(i, 4))
+   }
+*/
+
+func writePed(sexes map[string][]float64, counts []*counter, keys []string, samples []string, prefix string, pcs *mat64.Dense) {
 	if len(sexes) == 0 {
 		return
 	}
@@ -423,11 +445,14 @@ func writePed(sexes map[string][]float64, counts []*counter, keys []string, samp
 	if err != nil {
 		panic(err)
 	}
-	hdr := make([]string, len(keys), len(keys)+4)
+	hdr := make([]string, len(keys), len(keys)+7)
 	for i, k := range keys {
 		hdr[i] = "CN" + k
 	}
 	hdr = append(hdr, []string{"bins.out", "bins.lo", "bins.hi", "bins.in", "p.out"}...)
+	if pcs != nil {
+		hdr = append(hdr, "PC1\tPC2\tPC3\tPC4\tPC5")
+	}
 
 	fmt.Fprintf(f, "#family_id\tsample_id\tpaternal_id\tmaternal_id\tsex\tphenotype\t%s\n", strings.Join(hdr, "\t"))
 
@@ -448,6 +473,14 @@ func writePed(sexes map[string][]float64, counts []*counter, keys []string, samp
 			fmt.Sprintf("%d", cnt.in),
 			fmt.Sprintf("%.2f", float64(cnt.out)/float64(cnt.in)),
 		}...)
+		if pcs != nil {
+			s = append(s,
+				fmt.Sprintf("%.2f", pcs.At(i, 0)),
+				fmt.Sprintf("%.2f", pcs.At(i, 1)),
+				fmt.Sprintf("%.2f", pcs.At(i, 2)),
+				fmt.Sprintf("%.2f", pcs.At(i, 3)),
+				fmt.Sprintf("%.2f", pcs.At(i, 4)))
+		}
 
 		fmt.Fprintln(f, strings.Join(s, "\t"))
 	}

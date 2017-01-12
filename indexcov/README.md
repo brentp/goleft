@@ -79,10 +79,9 @@ In addition to the  interactive HTML files, `indexcov` outputs a number of text 
                           `bins.hi`: number of bins with value > 1.15. 
                           `bins.in`: number of bins with value inside of (0.85, 1.15)
                           `p.out`: `bins.out/bins.in`
+                          `PC1...PC5`: PCA projections calculated with depth of autosomes.
 
 + `$prefix-indexcov.roc`: tab-delimited columns of chrom, scaled coverage cutoff, and $n_samples columns where each indicates the
                           proportion of 16KB blocks at or above that scaled coverage value.
 + `$prefix-indexcov.bed.gz`: a bed file with columns of chrom, start, end, and a column per sample where the values indicate there
                              scaled coverage for that sample in that 16KB chunk.
-+ `$prefix-indexcov.pca.txt`: a text file with rows of samples and columns indicating each successive principal component calculated
-                              from depths on non-sex chromosomes.
