@@ -267,22 +267,30 @@ func Main() {
 		names = append(names, getShortName(b))
 	}
 
-	charts, sexes := run(refs, idxs, names)
+	charts, sexes, counts := run(refs, idxs, names)
 
 	chartjs.XFloatFormat = "%.2f"
 	saveCharts(fmt.Sprintf("%s-indexcov-roc.html", cli.Prefix), "", charts...)
-	writePed(sexes, cli.Sex, names, cli.Prefix)
+	writePed(sexes, counts, cli.Sex, names, cli.Prefix)
 }
 
-func run(refs []*sam.Reference, idxs []*Index, names []string) ([]chartjs.Chart, map[string][]float64) {
+// if there are more samples than this then the depth plots won't be drawn.
+const maxSamples = 100
+
+func run(refs []*sam.Reference, idxs []*Index, names []string) ([]chartjs.Chart, map[string][]float64, []*counter) {
 	// keep a slice of charts since we plot all of the coverage roc charts in a single html file.
 	charts := make([]chartjs.Chart, 0, len(refs))
 	sexes := make(map[string][]float64)
 	counts := make([][]int, len(idxs))
 	depths := make([][]float32, len(idxs))
+
+	offs := make([]*counter, len(idxs))
 	// uint8 to use less memory.
 	pca8 := make([][]uint8, len(idxs))
 	log.Printf("indexcov: running on %d indexes", len(idxs))
+	if len(idxs) > maxSamples {
+		log.Printf("indexcov: only plotting ROC, sex, PCA and bin plots (not depth) because # of samples %d is > %d\n", len(idxs), maxSamples)
+	}
 
 	bgz, err := getWriter(cli.Prefix)
 	if err != nil {
@@ -304,6 +312,7 @@ func run(refs []*sam.Reference, idxs []*Index, names []string) ([]chartjs.Chart,
 		for k, idx := range idxs {
 			if ir == 0 {
 				pca8[k] = make([]uint8, 0, 2e5)
+				offs[k] = &counter{}
 			}
 			depths[k] = idx.NormalizedDepth(ref.ID(), 0, ref.Len())
 			if len(depths[k]) > longest {
@@ -338,6 +347,7 @@ func run(refs []*sam.Reference, idxs []*Index, names []string) ([]chartjs.Chart,
 				for ; i < longest; i++ {
 					pca8[k] = append(pca8[k], 0)
 				}
+				offs[k].count(depths[k], longest)
 			}
 		}
 
@@ -347,9 +357,16 @@ func run(refs []*sam.Reference, idxs []*Index, names []string) ([]chartjs.Chart,
 		if len(depths[longesti]) > 0 {
 			c := writeROCs(counts, names, chrom, cli.Prefix, rfh)
 			if cli.IncludeGL || !strings.HasPrefix(chrom, "GL") {
-				charts = append(charts, c)
-				if err := plotDepths(depths, names, chrom, cli.Prefix); err != nil {
-					panic(err)
+				if len(names) < maxSamples {
+					charts = append(charts, c)
+					if err := plotDepths(depths, names, chrom, cli.Prefix); err != nil {
+						panic(err)
+					}
+				} else {
+					tmp := chartjs.XFloatFormat
+					chartjs.XFloatFormat = "%.2f"
+					saveCharts(fmt.Sprintf("%s-indexcov-%s-roc.html", cli.Prefix, chrom), "", c)
+					chartjs.XFloatFormat = tmp
 				}
 			}
 			if len(charts) > 1 {
@@ -360,7 +377,8 @@ func run(refs []*sam.Reference, idxs []*Index, names []string) ([]chartjs.Chart,
 	if len(names) > 5 {
 		pca(pca8, names, cli.Prefix)
 	}
-	return charts, sexes
+	plotCounters(offs, names, cli.Prefix)
+	return charts, sexes, offs
 }
 
 func pca(pca8 [][]uint8, samples []string, prefix string) {
@@ -390,7 +408,7 @@ func pca(pca8 [][]uint8, samples []string, prefix string) {
 	log.Printf("indexcov: completed PCA in: %.3f seconds", time.Since(t).Seconds())
 }
 
-func writePed(sexes map[string][]float64, keys []string, samples []string, prefix string) {
+func writePed(sexes map[string][]float64, counts []*counter, keys []string, samples []string, prefix string) {
 	if len(sexes) == 0 {
 		return
 	}
@@ -405,10 +423,12 @@ func writePed(sexes map[string][]float64, keys []string, samples []string, prefi
 	if err != nil {
 		panic(err)
 	}
-	hdr := make([]string, len(keys))
+	hdr := make([]string, len(keys), len(keys)+4)
 	for i, k := range keys {
 		hdr[i] = "CN" + k
 	}
+	hdr = append(hdr, []string{"bins.out", "bins.lo", "bins.hi", "bins.in", "p.out"}...)
+
 	fmt.Fprintf(f, "#family_id\tsample_id\tpaternal_id\tmaternal_id\tsex\tphenotype\t%s\n", strings.Join(hdr, "\t"))
 
 	tmpl := "unknown\t%s\t-9\t-9\t%d\t-9\t"
@@ -416,10 +436,19 @@ func writePed(sexes map[string][]float64, keys []string, samples []string, prefi
 		inferred := int(0.5 + sexes[keys[0]][i])
 		fmt.Fprintf(f, tmpl, s, inferred)
 		sexes["_inferred"][i] = float64(inferred)
-		s := make([]string, 0, len(keys))
+		s := make([]string, 0, len(keys)+4)
 		for _, k := range keys {
 			s = append(s, fmt.Sprintf("%.2f", sexes[k][i]))
 		}
+		cnt := counts[i]
+		s = append(s, []string{
+			fmt.Sprintf("%d", cnt.out),
+			fmt.Sprintf("%d", cnt.low),
+			fmt.Sprintf("%d", cnt.hi),
+			fmt.Sprintf("%d", cnt.in),
+			fmt.Sprintf("%.2f", float64(cnt.out)/float64(cnt.in)),
+		}...)
+
 		fmt.Fprintln(f, strings.Join(s, "\t"))
 	}
 	if len(keys) > 1 {
@@ -458,6 +487,9 @@ func GetCN(depths [][]float32) []float64 {
 }
 
 func saveCharts(path string, customjs string, charts ...chartjs.Chart) {
+	if len(charts) == 0 {
+		return
+	}
 	wtr, err := os.Create(path)
 	if err != nil {
 		panic(err)
@@ -508,4 +540,34 @@ func depthsFor(depths [][]float32, i int) string {
 		}
 	}
 	return strings.Join(s, "\t")
+}
+
+// count how many values are not within the expected range.
+func (c *counter) count(depths []float32, n int) {
+	var i int
+	for ; i < len(depths); i++ {
+		if depths[i] < 0.85 || depths[i] > 1.15 {
+			c.out++
+			if depths[i] > 1.15 {
+				c.hi++
+			} else if depths[i] < 0.15 {
+				c.low++
+			}
+		} else {
+			c.in++
+		}
+	}
+	c.out += n - i
+	c.low += n - i
+}
+
+type counter struct {
+	// count of sites outside of (0.85, 1.15)
+	out int
+	// count of sites below 0.15
+	low int
+	// count of sites above 1.15
+	hi int
+	// count of sites inside of (0.85, 1.15)
+	in int
 }

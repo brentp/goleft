@@ -95,6 +95,62 @@ func plotDepths(depths [][]float32, samples []string, chrom string, prefix strin
 
 }
 
+func plotCounters(counts []*counter, samples []string, prefix string) {
+	c := &types.RGBA{110, 250, 59, 240}
+	chart := chartjs.Chart{}
+	xa, err := chart.AddXAxis(chartjs.Axis{Type: chartjs.Linear, Position: chartjs.Bottom, ScaleLabel: &chartjs.ScaleLabel{FontSize: 16,
+		LabelString: "total bins with depth < 0.15",
+		Display:     chartjs.True}})
+	if err != nil {
+		panic(err)
+	}
+
+	ya, err := chart.AddYAxis(chartjs.Axis{Type: chartjs.Linear, Position: chartjs.Left, ScaleLabel: &chartjs.ScaleLabel{FontSize: 16,
+		LabelString: "total bins with depth outside of (0.85, 1.15)",
+		Display:     chartjs.True}})
+
+	if err != nil {
+		panic(err)
+	}
+	xys := &vs{xs: make([]float64, len(counts)), ys: make([]float64, len(counts))}
+	for i, c := range counts {
+		xys.xs[i] = float64(c.low)
+		xys.ys[i] = float64(c.out)
+	}
+	dataset := chartjs.Dataset{Data: xys, Label: "samples", Fill: chartjs.False, PointHoverRadius: 6,
+		PointRadius: 4, BorderWidth: 0, BorderColor: &types.RGBA{150, 150, 150, 150},
+		PointBackgroundColor: c, BackgroundColor: c, ShowLine: chartjs.False, PointHitRadius: 6}
+	dataset.XAxisID = xa
+	dataset.YAxisID = ya
+	chart.AddDataset(dataset)
+	chart.Options.Responsive = chartjs.False
+	wtr, err := os.Create(fmt.Sprintf("%s-indexcov-bins.html", prefix))
+	if err != nil {
+		panic(err)
+	}
+	sjson, err := json.Marshal(samples)
+	if err != nil {
+		panic(err)
+	}
+	jsfunc := fmt.Sprintf(`
+for (var i =0; i < charts.length; i++) {
+    charts[i].options.tooltips.callbacks.footer = function(tts, data) {
+        var names = %s
+        var out = []
+        tts.forEach(function(ti) {
+            out.push(names[ti.index])
+        })
+        return out.join(",")
+    }
+}`, sjson)
+
+	if err := chartjs.SaveCharts(wtr, map[string]interface{}{"custom": template.JS(jsfunc), "width": 800, "height": 800}, chart); err != nil {
+		panic(err)
+	}
+	wtr.Close()
+
+}
+
 func plotPCA(mat *mat64.Dense, prefix string, samples []string, vars []float64) {
 
 	var charts []chartjs.Chart
