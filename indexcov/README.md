@@ -8,7 +8,7 @@ coverage estimate in seconds per genome.
 The output is scaled to around 1. So a long stretch with values of 1.5 would be a heterozygous duplication.
 This is useful as a quick QC to get coverage values across the genome.
 
-In our tests, we can **estimate depth across a 60X genomes for 30 samples in 1 minute**.
+In our tests, we can **estimate depth across a 60X genomes for 30 samples in 30 seconds**.
 
 Interactive HTML plots of depth are output for each chromosome. Live examples of the interactive output are available [here](https://brentp.github.io/goleft/indexcov/index.html)
 
@@ -53,6 +53,7 @@ This is output to a $prefix-depth-roc.html file and looks like:
 Here we can see that one sample has much lower coverage than the rest, and we can hover and determine the exact sample.
 
 
+
 How It Works
 ============
 
@@ -76,3 +77,5 @@ In addition to the  interactive HTML files, `indexcov` outputs a number of text 
                           proportion of 16KB blocks at or above that scaled coverage value.
 + `$prefix-indexcov.bed.gz`: a bed file with columns of chrom, start, end, and a column per sample where the values indicate there
                              scaled coverage for that sample in that 16KB chunk.
++ `$prefix-indexcov.pca.txt`: a text file with rows of samples and columns indicating each successive principal component calculated
+                              from depths on non-sex chromosomes.

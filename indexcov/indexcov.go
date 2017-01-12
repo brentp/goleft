@@ -1,6 +1,7 @@
 package indexcov
 
 import (
+	"bufio"
 	"fmt"
 	"html/template"
 	"io"
@@ -18,6 +19,8 @@ import (
 	"github.com/biogo/hts/sam"
 	chartjs "github.com/brentp/go-chartjs"
 	"github.com/brentp/go-chartjs/types"
+	"github.com/gonum/matrix/mat64"
+	"github.com/gonum/stat"
 )
 
 // Ploidy indicates the expected ploidy of the samples.
@@ -248,10 +251,14 @@ func Main() {
 
 		rdr, err = os.Open(b + ".bai")
 		if err != nil {
-			panic(err)
+			var terr error
+			rdr, terr = os.Open(b[:(len(b)-4)] + ".bai")
+			if terr != nil {
+				panic(err)
+			}
 		}
 
-		idx, err := bam.ReadIndex(rdr)
+		idx, err := bam.ReadIndex(bufio.NewReader(rdr))
 		if err != nil {
 			panic(err)
 		}
@@ -267,11 +274,14 @@ func Main() {
 }
 
 func run(refs []*sam.Reference, idxs []*Index, names []string) ([]chartjs.Chart, map[string][]float64) {
-	// we plot all the coverage roc charts in a single html file. so need a slize to keep them.
+	// keep a slice of charts since we plot all of the coverage roc charts in a single html file.
 	charts := make([]chartjs.Chart, 0, len(refs))
 	sexes := make(map[string][]float64)
 	counts := make([][]int, len(idxs))
 	depths := make([][]float32, len(idxs))
+	// uint8 to use less memory.
+	pca8 := make([][]uint8, len(idxs))
+	log.Printf("indexcov: running on %d indexes", len(idxs))
 
 	bgz, err := getWriter(cli.Prefix)
 	if err != nil {
@@ -291,9 +301,13 @@ func run(refs []*sam.Reference, idxs []*Index, names []string) ([]chartjs.Chart,
 		longest, longesti := 0, 0
 
 		for k, idx := range idxs {
+			if ir == 0 {
+				pca8[k] = make([]uint8, 0, 2e5)
+			}
 			depths[k] = idx.NormalizedDepth(ref.ID(), 0, ref.Len())
 			if len(depths[k]) > longest {
 				longesti = k
+				longest = len(depths[k])
 			}
 			if ir == 0 {
 				counts[k] = make([]int, slots)
@@ -304,9 +318,25 @@ func run(refs []*sam.Reference, idxs []*Index, names []string) ([]chartjs.Chart,
 			CountsAtDepth(depths[k], counts[k])
 		}
 
+		isSex := false
 		for _, x := range cli.Sex {
-			if x == chrom && len(depths[longesti]) > 0 {
-				sexes[chrom] = GetCN(depths)
+			if x == chrom {
+				isSex = true
+				if len(depths[longesti]) > 0 {
+					sexes[chrom] = GetCN(depths)
+				}
+			}
+		}
+		if !isSex {
+			// now add non-sex chromosomes to the pca data since we know the longest.
+			for k := range idxs {
+				var i int
+				for i = 0; i < len(depths[k]); i++ {
+					pca8[k] = append(pca8[k], uint8(65535/MaxCN*depths[k][i]+0.5))
+				}
+				for ; i < longest; i++ {
+					pca8[k] = append(pca8[k], 0)
+				}
 			}
 		}
 
@@ -326,7 +356,33 @@ func run(refs []*sam.Reference, idxs []*Index, names []string) ([]chartjs.Chart,
 			}
 		}
 	}
+	pca(pca8, names, cli.Prefix)
 	return charts, sexes
+}
+
+func pca(pca8 [][]uint8, samples []string, prefix string) {
+	t := time.Now()
+	mat := mat64.NewDense(len(pca8), len(pca8[0]), nil)
+	row := make([]float64, len(pca8[0]))
+	for i := 0; i < len(pca8); i++ {
+		for j, v := range pca8[i] {
+			row[j] = float64(v)
+		}
+		mat.SetRow(i, row)
+	}
+	var pc stat.PC
+	if ok := pc.PrincipalComponents(mat, nil); !ok {
+		panic("indexcov: error with principal components")
+	}
+
+	//vars := scale(pc.Vars(nil))
+
+	k := 5
+	var proj mat64.Dense
+	proj.Mul(mat, pc.Vectors(nil).Slice(0, len(pca8[0]), 0, k))
+	plotPCA(&proj, prefix, samples)
+
+	log.Printf("indexcov: completed PCA in: %.3f seconds", time.Since(t).Seconds())
 }
 
 func writePed(sexes map[string][]float64, keys []string, samples []string, prefix string) {

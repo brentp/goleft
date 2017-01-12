@@ -1,13 +1,16 @@
 package indexcov
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"math/rand"
 	"os"
 
 	chartjs "github.com/brentp/go-chartjs"
 	"github.com/brentp/go-chartjs/types"
+	"github.com/gonum/matrix/mat64"
 )
 
 type vs struct {
@@ -89,6 +92,78 @@ func plotDepths(depths [][]float32, samples []string, chrom string, prefix strin
 		return err
 	}
 	return wtr.Close()
+
+}
+
+func plotPCA(mat *mat64.Dense, prefix string, samples []string) {
+
+	var charts []chartjs.Chart
+	c := &types.RGBA{110, 250, 59, 240}
+
+	for _, pc := range []int{2, 3} {
+
+		c1 := chartjs.Chart{}
+		xa, err := c1.AddXAxis(chartjs.Axis{Type: chartjs.Linear, Position: chartjs.Bottom, ScaleLabel: &chartjs.ScaleLabel{FontSize: 16, LabelString: "PC1", Display: chartjs.True}})
+		if err != nil {
+			panic(err)
+		}
+
+		ya, err := c1.AddYAxis(chartjs.Axis{Type: chartjs.Linear, Position: chartjs.Left, ScaleLabel: &chartjs.ScaleLabel{FontSize: 16, LabelString: fmt.Sprintf("PC%d", pc), Display: chartjs.True}})
+
+		if err != nil {
+			panic(err)
+		}
+		xys := &vs{xs: mat64.Col(nil, 0, mat), ys: mat64.Col(nil, pc-1, mat)}
+		dataset := chartjs.Dataset{Data: xys, Label: "samples", Fill: chartjs.False, PointHoverRadius: 6,
+			PointRadius: 4,
+			BorderWidth: 0, BorderColor: &types.RGBA{150, 150, 150, 150}, PointBackgroundColor: c, BackgroundColor: c, ShowLine: chartjs.False, PointHitRadius: 6}
+		dataset.XAxisID = xa
+		dataset.YAxisID = ya
+		c1.AddDataset(dataset)
+		c1.Options.Responsive = chartjs.False
+		charts = append(charts, c1)
+	}
+	wtr, err := os.Create(fmt.Sprintf("%s-indexcov-pca.html", prefix))
+	if err != nil {
+		panic(err)
+	}
+	sjson, err := json.Marshal(samples)
+	if err != nil {
+		panic(err)
+	}
+	jsfunc := fmt.Sprintf(`
+for (var i =0; i < charts.length; i++) {
+    charts[i].options.tooltips.callbacks.footer = function(tts, data) {
+        var names = %s
+        var out = []
+        tts.forEach(function(ti) {
+            out.push(names[ti.index])
+        })
+        return out.join(",")
+    }
+}`, sjson)
+
+	if err := chartjs.SaveCharts(wtr, map[string]interface{}{"custom": template.JS(jsfunc), "width": 800, "height": 800}, charts...); err != nil {
+		panic(err)
+	}
+	wtr.Close()
+
+	wtr, err = os.Create(fmt.Sprintf("%s-indexcov-pca.txt", prefix))
+	if err != nil {
+		panic(err)
+	}
+	wtr.Write([]byte("#sample\tPC1\tPC2\tPC3\tPC4\tPC5\n"))
+	defer wtr.Close()
+	bwtr := bufio.NewWriter(wtr)
+
+	for i, sample := range samples {
+		fmt.Fprintf(bwtr, "%s\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\n", sample,
+			mat.At(i, 0),
+			mat.At(i, 1),
+			mat.At(i, 2),
+			mat.At(i, 3),
+			mat.At(i, 4))
+	}
 
 }
 
