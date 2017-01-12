@@ -19,6 +19,7 @@ import (
 	"github.com/biogo/hts/sam"
 	chartjs "github.com/brentp/go-chartjs"
 	"github.com/brentp/go-chartjs/types"
+	"github.com/gonum/floats"
 	"github.com/gonum/matrix/mat64"
 	"github.com/gonum/stat"
 )
@@ -356,7 +357,9 @@ func run(refs []*sam.Reference, idxs []*Index, names []string) ([]chartjs.Chart,
 			}
 		}
 	}
-	pca(pca8, names, cli.Prefix)
+	if len(names) > 5 {
+		pca(pca8, names, cli.Prefix)
+	}
 	return charts, sexes
 }
 
@@ -375,12 +378,14 @@ func pca(pca8 [][]uint8, samples []string, prefix string) {
 		panic("indexcov: error with principal components")
 	}
 
-	//vars := scale(pc.Vars(nil))
-
 	k := 5
+	vars := pc.Vars(nil)
+	floats.Scale(1/floats.Sum(vars), vars)
+	vars = vars[:k]
+
 	var proj mat64.Dense
 	proj.Mul(mat, pc.Vectors(nil).Slice(0, len(pca8[0]), 0, k))
-	plotPCA(&proj, prefix, samples)
+	plotPCA(&proj, prefix, samples, vars)
 
 	log.Printf("indexcov: completed PCA in: %.3f seconds", time.Since(t).Seconds())
 }
@@ -441,9 +446,13 @@ func GetCN(depths [][]float32) []float64 {
 				tmp = append(tmp, dp)
 			}
 		}
-		sort.Slice(tmp, func(i, j int) bool { return tmp[i] < tmp[j] })
-		med := float64(float32(Ploidy) * tmp[int(float64(len(tmp))*0.5)])
-		meds = append(meds, med)
+		if len(tmp) > 0 {
+			sort.Slice(tmp, func(i, j int) bool { return tmp[i] < tmp[j] })
+			med := float64(float32(Ploidy) * tmp[int(float64(len(tmp))*0.5)])
+			meds = append(meds, med)
+		} else {
+			meds = append(meds, -1)
+		}
 	}
 	return meds
 }

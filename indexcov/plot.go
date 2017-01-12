@@ -95,7 +95,7 @@ func plotDepths(depths [][]float32, samples []string, chrom string, prefix strin
 
 }
 
-func plotPCA(mat *mat64.Dense, prefix string, samples []string) {
+func plotPCA(mat *mat64.Dense, prefix string, samples []string, vars []float64) {
 
 	var charts []chartjs.Chart
 	c := &types.RGBA{110, 250, 59, 240}
@@ -103,12 +103,16 @@ func plotPCA(mat *mat64.Dense, prefix string, samples []string) {
 	for _, pc := range []int{2, 3} {
 
 		c1 := chartjs.Chart{}
-		xa, err := c1.AddXAxis(chartjs.Axis{Type: chartjs.Linear, Position: chartjs.Bottom, ScaleLabel: &chartjs.ScaleLabel{FontSize: 16, LabelString: "PC1", Display: chartjs.True}})
+		xa, err := c1.AddXAxis(chartjs.Axis{Type: chartjs.Linear, Position: chartjs.Bottom, ScaleLabel: &chartjs.ScaleLabel{FontSize: 16,
+			LabelString: fmt.Sprintf("PC1 (variance explained: %.2f%%)", 100*vars[0]),
+			Display:     chartjs.True}})
 		if err != nil {
 			panic(err)
 		}
 
-		ya, err := c1.AddYAxis(chartjs.Axis{Type: chartjs.Linear, Position: chartjs.Left, ScaleLabel: &chartjs.ScaleLabel{FontSize: 16, LabelString: fmt.Sprintf("PC%d", pc), Display: chartjs.True}})
+		ya, err := c1.AddYAxis(chartjs.Axis{Type: chartjs.Linear, Position: chartjs.Left, ScaleLabel: &chartjs.ScaleLabel{FontSize: 16,
+			LabelString: fmt.Sprintf("PC%d (variance explained: %.2f%%)", pc, 100*vars[pc-1]),
+			Display:     chartjs.True}})
 
 		if err != nil {
 			panic(err)
@@ -155,6 +159,7 @@ for (var i =0; i < charts.length; i++) {
 	wtr.Write([]byte("#sample\tPC1\tPC2\tPC3\tPC4\tPC5\n"))
 	defer wtr.Close()
 	bwtr := bufio.NewWriter(wtr)
+	defer bwtr.Flush()
 
 	for i, sample := range samples {
 		fmt.Fprintf(bwtr, "%s\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\n", sample,
