@@ -1,6 +1,12 @@
 package indexcov
 
-import "github.com/biogo/hts/bgzf"
+import (
+	"reflect"
+	"unsafe"
+
+	"github.com/biogo/hts/bam"
+	"github.com/biogo/hts/bgzf"
+)
 
 const (
 	// TileWidth is the length of the interval tiling used
@@ -33,4 +39,21 @@ type referenceStats struct {
 
 	// Unmapped is the count of unmapped reads.
 	Unmapped uint64
+}
+
+func getRefs(idx *bam.Index) [][]int64 {
+	refs := reflect.ValueOf(*idx).FieldByName("idx").FieldByName("Refs")
+	ptr := unsafe.Pointer(refs.Pointer())
+
+	ret := (*(*[1 << 28]oRefIndex)(ptr))[:refs.Len()]
+	// save some memory.
+	m := make([][]int64, len(ret))
+	for i, r := range ret {
+		m[i] = make([]int64, len(r.Intervals))
+		for k, iv := range r.Intervals {
+			m[i][k] = vOffset(iv)
+		}
+		r.Bins, r.Intervals = nil, nil
+	}
+	return m
 }

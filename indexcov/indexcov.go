@@ -7,11 +7,9 @@ import (
 	"io"
 	"log"
 	"os"
-	"reflect"
 	"sort"
 	"strings"
 	"time"
-	"unsafe"
 
 	arg "github.com/alexflint/go-arg"
 	"github.com/biogo/hts/bam"
@@ -34,23 +32,6 @@ var cli = struct {
 	Chrom     string   `arg:"-c,help:optional chromosome to extract depth. default is entire genome."`
 	Bam       []string `arg:"positional,required,help:bam(s) for which to estimate coverage"`
 }{Sex: []string{"X", "Y"}}
-
-func getRefs(idx *bam.Index) [][]int64 {
-	refs := reflect.ValueOf(*idx).FieldByName("idx").FieldByName("Refs")
-	ptr := unsafe.Pointer(refs.Pointer())
-
-	ret := (*(*[1 << 28]oRefIndex)(ptr))[:refs.Len()]
-	// save some memory.
-	m := make([][]int64, len(ret))
-	for i, r := range ret {
-		m[i] = make([]int64, len(r.Intervals))
-		for k, iv := range r.Intervals {
-			m[i][k] = vOffset(iv)
-		}
-		r.Bins, r.Intervals = nil, nil
-	}
-	return m
-}
 
 // MaxCN is the maximum normalized value.
 var MaxCN = float32(6)
@@ -304,16 +285,21 @@ func run(refs []*sam.Reference, idxs []*Index, names []string) ([]chartjs.Chart,
 		log.Printf("indexcov: only plotting ROC, sex, PCA and bin plots (not depth) because # of samples %d is > %d\n", len(idxs), maxSamples)
 	}
 
-	bgz, err := getWriter(cli.Prefix)
+	tmp, err := getWriter(cli.Prefix)
 	if err != nil {
 		panic(err)
 	}
-	defer bgz.Close()
+	defer tmp.Close()
+	bgz := bufio.NewWriter(tmp)
+	defer bgz.Flush()
 
-	rfh, err := os.Create(fmt.Sprintf("%s-indexcov.roc", cli.Prefix))
+	rtmp, err := os.Create(fmt.Sprintf("%s-indexcov.roc", cli.Prefix))
 	if err != nil {
 		panic(err)
 	}
+	defer rtmp.Close()
+	rfh := bufio.NewWriter(rtmp)
+	defer rfh.Flush()
 
 	fmt.Fprintf(bgz, "#chrom\tstart\tend\t%s\n", strings.Join(names, "\t"))
 	for ir, ref := range refs {
@@ -423,26 +409,7 @@ func pca(pca8 [][]uint8, samples []string, prefix string) *mat64.Dense {
 	return &proj
 }
 
-/*
-   wtr, err = os.Create(fmt.Sprintf("%s-indexcov-pca.txt", prefix))
-   if err != nil {
-       panic(err)
-   }
-   wtr.Write([]byte("#sample\tPC1\tPC2\tPC3\tPC4\tPC5\n"))
-   defer wtr.Close()
-   bwtr := bufio.NewWriter(wtr)
-   defer bwtr.Flush()
-
-   for i, sample := range samples {
-       fmt.Fprintf(bwtr, "%s\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\n", sample,
-           mat.At(i, 0),
-           mat.At(i, 1),
-           mat.At(i, 2),
-           mat.At(i, 3),
-           mat.At(i, 4))
-   }
-*/
-
+// write a ped file. includes the PC projections and inferred sexes.
 func writePed(sexes map[string][]float64, counts []*counter, keys []string, samples []string, prefix string, pcs *mat64.Dense) {
 	if len(sexes) == 0 {
 		return
@@ -588,7 +555,18 @@ func depthsFor(depths [][]float32, i int) string {
 	return strings.Join(s, "\t")
 }
 
-// count how many values are not within the expected range.
+type counter struct {
+	// count of sites outside of (0.85, 1.15)
+	out int
+	// count of sites below 0.15
+	low int
+	// count of sites above 1.15
+	hi int
+	// count of sites inside of (0.85, 1.15)
+	in int
+}
+
+// count values in or out of expected range of ~1.
 func (c *counter) count(depths []float32, n int) {
 	var i int
 	for ; i < len(depths); i++ {
@@ -605,15 +583,4 @@ func (c *counter) count(depths []float32, n int) {
 	}
 	c.out += n - i
 	c.low += n - i
-}
-
-type counter struct {
-	// count of sites outside of (0.85, 1.15)
-	out int
-	// count of sites below 0.15
-	low int
-	// count of sites above 1.15
-	hi int
-	// count of sites inside of (0.85, 1.15)
-	in int
 }
