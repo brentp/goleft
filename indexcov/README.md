@@ -16,24 +16,15 @@ Usage
 =====
 
 ```
-goleft indexcov -c $chrom *.bam > depth.bed
+goleft indexcov --prefix my-project-dir/ *.bam
 ```
 
-This will create a bed file where each additional column is the normalized, estimated depth for each
-sample. If no chromosome is given, it will do the whole genome. Since most of the time is scaling There
-coverages based on the entire index, there's very little speed benefit to choosing only a single chromosome.
+This will create a number of text files described in the [Files](#Files) section below.
 
-See the [Files](#Files) section below
+In addition, it will write a few `.html` files containing interactive plots.
 
-
-In addition, an interactive HTML file is output per chromosome that displays information like this:
-
-![Example](https://cloud.githubusercontent.com/assets/1739/21273832/a42c3a6c-c382-11e6-9bd1-3870a8333c04.png "example depth")
-
-Where each color is a sample and here we can see that the purple sample has a large deletion and the yellow/tan sample has a
-higher variance.
-
-If we view the html file for **X chromosome** we can see a nice separation of samples by sex along with the PAR at the left:
+For example, if we view the $prefix-indexcov-depth-X.html file for **X chromosome** we can see a
+nice separation of samples by sex except at the PAR at the left:
 
 ![X Example](https://cloud.githubusercontent.com/assets/1739/21597648/074f06ca-d10b-11e6-8732-e9a2e8d1ecb5.png "x example")
 
@@ -45,14 +36,19 @@ information, and makes a plot like this one:
 ![Sex Example](https://cloud.githubusercontent.com/assets/1739/21627994/2973d464-d1d9-11e6-9962-5d3ac0f80329.png "sex example")
 Where here the males and females separate by the X and Y chromosomes perfectly.
 
+In some cases, we have found *XXY* and *XYY* samples this way.
 
-Finally, `indexcov` will output a coverage (ROC) plot that shows how much of the genome is coverage at at given (scaled) depth.
+
+`indexcov` will output a coverage (ROC) plot that shows how much of the genome is coverage at at given (scaled) depth.
 This is output to a $prefix-depth-roc.html file and looks like:
 ![ROC Example](https://cloud.githubusercontent.com/assets/1739/21599983/b27fa4d8-d132-11e6-95b9-e9fa8ae64412.png "ROC example")
 
 Here we can see that one sample has much lower coverage than the rest, and we can hover and determine the exact sample.
 
 
+Finally, `indexcov` will output a `$prefix-indexcov-bins.html` file with a point per sample. Samples with high
+values on the y-axis have very uneven coverage (this will affect SV calling). Samples with high values on There
+x-axis have many missing bins (likely truncated bam files).
 
 How It Works
 ============
@@ -64,8 +60,8 @@ over each (16KB) element in the linear index, subtract the previous file offset,
 gives the scaled value for each 16,384-base chunk. There are many ways that this value can be off, but, in practice, it works
 well as a rough estimate.
 
-Because of this `indexcov` is of less-use on exome or targetted capture, but those are small enough that it will
-be very fast to run `goleft depth` anyway.
+Because of this `indexcov` is of less-use on exome or targetted capture, but those will
+be very fast to run with `goleft depth` anyway.
 
 <a name="Files"></a> Files
 ==========================
