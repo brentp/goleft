@@ -35,10 +35,21 @@ var cli = struct {
 	Bam       []string `arg:"positional,required,help:bam(s) for which to estimate coverage"`
 }{Sex: []string{"X", "Y"}}
 
-func getRefs(idx *bam.Index) []RefIndex {
+func getRefs(idx *bam.Index) [][]int64 {
 	refs := reflect.ValueOf(*idx).FieldByName("idx").FieldByName("Refs")
 	ptr := unsafe.Pointer(refs.Pointer())
-	return (*(*[1 << 28]RefIndex)(ptr))[:refs.Len()]
+
+	ret := (*(*[1 << 28]oRefIndex)(ptr))[:refs.Len()]
+	// save some memory.
+	m := make([][]int64, len(ret))
+	for i, r := range ret {
+		m[i] = make([]int64, len(r.Intervals))
+		for k, iv := range r.Intervals {
+			m[i][k] = vOffset(iv)
+		}
+		r.Bins, r.Intervals = nil, nil
+	}
+	return m
 }
 
 // MaxCN is the maximum normalized value.
@@ -50,7 +61,7 @@ type Index struct {
 
 	//mu                *sync.RWMutex
 	medianSizePerTile float64
-	refs              []RefIndex
+	refs              [][]int64
 }
 
 func vOffset(o bgzf.Offset) int64 {
@@ -60,15 +71,16 @@ func vOffset(o bgzf.Offset) int64 {
 // init sets the medianSizePerTile
 func (x *Index) init() {
 	x.refs = getRefs(x.Index)
+	x.Index = nil
 
 	// sizes is used to get the median.
 	sizes := make([]int64, 0, 16384)
 	for k := 0; k < len(x.refs)-1; k++ {
-		if len(x.refs[k].Intervals) < 2 {
+		if len(x.refs[k]) < 2 {
 			continue
 		}
-		for i, iv := range x.refs[k].Intervals[1:] {
-			sizes = append(sizes, vOffset(iv)-vOffset(x.refs[k].Intervals[i]))
+		for i, iv := range x.refs[k][1:] {
+			sizes = append(sizes, iv-x.refs[k][i])
 		}
 	}
 
@@ -95,15 +107,15 @@ func (x *Index) NormalizedDepth(refID int, start int, end int) []float32 {
 	ref := x.refs[refID]
 
 	si, ei := start/TileWidth, end/TileWidth
-	if end == 0 || ei >= len(ref.Intervals) {
-		ei = len(ref.Intervals) - 1
+	if end == 0 || ei >= len(ref) {
+		ei = len(ref) - 1
 	}
 	if ei <= si {
 		return nil
 	}
 	depths := make([]float32, 0, ei-si)
-	for i, o := range ref.Intervals[si:ei] {
-		depths = append(depths, float32(float64(vOffset(ref.Intervals[si+i+1])-vOffset(o))/x.medianSizePerTile))
+	for i, o := range ref[si:ei] {
+		depths = append(depths, float32(float64(ref[si+i+1]-o)/x.medianSizePerTile))
 		if depths[i] > MaxCN {
 			depths[i] = MaxCN
 		}
@@ -365,6 +377,7 @@ func run(refs []*sam.Reference, idxs []*Index, names []string) ([]chartjs.Chart,
 				} else {
 					tmp := chartjs.XFloatFormat
 					chartjs.XFloatFormat = "%.2f"
+					c.Options.Legend = &chartjs.Legend{Display: types.False}
 					saveCharts(fmt.Sprintf("%s-indexcov-%s-roc.html", cli.Prefix, chrom), "", c)
 					chartjs.XFloatFormat = tmp
 				}

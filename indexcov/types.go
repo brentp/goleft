@@ -12,21 +12,18 @@ const (
 	StatsDummyBin = 0x924a
 )
 
-// RefIndex is the index of a single reference.
-type RefIndex struct {
-	Bins      []Bin
-	Stats     *ReferenceStats
+type oRefIndex struct {
+	Bins      []bin
+	Stats     *referenceStats
 	Intervals []bgzf.Offset
 }
 
-// Bin is an index bin.
-type Bin struct {
+type bin struct {
 	Bin    uint32
 	Chunks []bgzf.Chunk
 }
 
-// ReferenceStats holds mapping statistics for a genomic reference.
-type ReferenceStats struct {
+type referenceStats struct {
 	// Chunk is the span of the indexed BGZF
 	// holding alignments to the reference.
 	Chunk bgzf.Chunk
