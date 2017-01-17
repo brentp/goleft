@@ -27,48 +27,8 @@ go install github.com/brentp/goleft/cmd/goleft
 
 # Commands
 
-### depth
-
-depth parallelizes calls to [samtools](https://samtools.github.io) in user-defined windows.
-
-##### Usage 
-
-```
-goleft depth -Q 1 --reference $fasta --prefix t $bam -p 32 -w 50 --stats
-```
-will use 32 cpus to parallelize the depth coverage counting only reads
-with a mapping quality (-Q) of 1 or greater. The output bed files
-will have 3 additional columns for the GC content, CpG content, and fraction
-of masked (lower-case) bases in the reference.
-
-
-### depthwed
-
-`depthwed` takes output from `depth` and makes a matrix -file of n-sites * n-samples
-
-### covmed
-
-covmed calculates median coverage by reading the bam index and getting mean read length.
-It outputs median coverage, mean insert-size, sd of insert-size, mean of template length, sd of template length
-to stdout.
-
-##### Usage 
-
-```
-goleft covmed $bam
-```
-This will output an estimate of median coverage to stdout.
-
-### indexcov
-
-quickly estimate coverage from whole genome bam indexes.
-
-##### Usage 
-
-```
-goleft indexcov -c $chrom *.bam > depth.bed
-```
-
-This will create a bed file where each additional column is the normalized, estimated depth for each
-sample.
++ [covmed](https://github.com/brentp/goleft/tree/master/covmed#covmed)   : calculate median coverage on a bam by sampling
++ [depth](https://github.com/brentp/goleft/tree/master/depth#depth)    : parallelize calls to samtools in user-defined windows
++ depthwed : matricize output from depth to n-sites * n-samples
++ [indexcov](https://github.com/brentp/goleft/tree/master/indexcov#indexcov) : quick coverage estimate using only the bam index
 

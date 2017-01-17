@@ -178,7 +178,7 @@ func getShortName(b string) string {
 		m[rg.Get(sam.Tag([2]byte{'S', 'M'}))] = true
 	}
 	if len(m) > 1 {
-		log.Println("warning: more than one tag for %s", b)
+		log.Printf("warning: more than one tag for %s", b)
 	}
 	for sm := range m {
 		return sm
@@ -399,6 +399,14 @@ func pca(pca8 [][]uint8, samples []string, prefix string) *mat64.Dense {
 	k := 5
 	vars := pc.Vars(nil)
 	floats.Scale(1/floats.Sum(vars), vars)
+	if len(vars) < k {
+		k = len(vars)
+		log.Printf("got: %d, principal components", len(vars))
+		if k < 3 {
+			log.Printf("indexcov: %d principal components, not plotting", k)
+			return nil
+		}
+	}
 	vars = vars[:k]
 
 	var proj mat64.Dense
@@ -416,7 +424,7 @@ func writePed(sexes map[string][]float64, counts []*counter, keys []string, samp
 	}
 	for _, k := range keys {
 		if _, ok := sexes[k]; !ok {
-			fmt.Printf("chromosome %s not found. not writing ped\n")
+			fmt.Printf("chromosome %s not found. not writing ped\n", k)
 			os.Exit(1)
 		}
 	}
@@ -425,6 +433,7 @@ func writePed(sexes map[string][]float64, counts []*counter, keys []string, samp
 	if err != nil {
 		panic(err)
 	}
+	defer f.Close()
 	hdr := make([]string, len(keys), len(keys)+7)
 	for i, k := range keys {
 		hdr[i] = "CN" + k

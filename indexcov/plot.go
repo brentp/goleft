@@ -54,10 +54,10 @@ func asValues(vals []float32, multiplier float64) chartjs.Values {
 func randomColor(s int) *types.RGBA {
 	rand.Seed(int64(s))
 	return &types.RGBA{
-		uint8(rand.Intn(256)),
-		uint8(rand.Intn(256)),
-		uint8(rand.Intn(256)),
-		240}
+		R: uint8(rand.Intn(256)),
+		G: uint8(rand.Intn(256)),
+		B: uint8(rand.Intn(256)),
+		A: 240}
 }
 
 func plotDepths(depths [][]float32, samples []string, chrom string, prefix string) error {
@@ -95,7 +95,7 @@ func plotDepths(depths [][]float32, samples []string, chrom string, prefix strin
 }
 
 func plotCounters(counts []*counter, samples []string, prefix string) {
-	c := &types.RGBA{110, 250, 59, 240}
+	c := &types.RGBA{R: 110, G: 250, B: 59, A: 240}
 	chart := chartjs.Chart{}
 	xa, err := chart.AddXAxis(chartjs.Axis{Type: chartjs.Linear, Position: chartjs.Bottom, ScaleLabel: &chartjs.ScaleLabel{FontSize: 16,
 		LabelString: "total bins with depth < 0.15",
@@ -117,7 +117,7 @@ func plotCounters(counts []*counter, samples []string, prefix string) {
 		xys.ys[i] = float64(c.out)
 	}
 	dataset := chartjs.Dataset{Data: xys, Label: "samples", Fill: chartjs.False, PointHoverRadius: 6,
-		PointRadius: 4, BorderWidth: 0, BorderColor: &types.RGBA{150, 150, 150, 150},
+		PointRadius: 4, BorderWidth: 0, BorderColor: &types.RGBA{R: 150, G: 150, B: 150, A: 150},
 		PointBackgroundColor: c, BackgroundColor: c, ShowLine: chartjs.False, PointHitRadius: 6}
 	dataset.XAxisID = xa
 	dataset.YAxisID = ya
@@ -153,7 +153,7 @@ for (var i =0; i < charts.length; i++) {
 func plotPCA(mat *mat64.Dense, prefix string, samples []string, vars []float64) {
 
 	var charts []chartjs.Chart
-	c := &types.RGBA{110, 250, 59, 240}
+	c := &types.RGBA{R: 110, G: 250, B: 59, A: 240}
 
 	for _, pc := range []int{2, 3} {
 
@@ -175,7 +175,7 @@ func plotPCA(mat *mat64.Dense, prefix string, samples []string, vars []float64) 
 		xys := &vs{xs: mat64.Col(nil, 0, mat), ys: mat64.Col(nil, pc-1, mat)}
 		dataset := chartjs.Dataset{Data: xys, Label: "samples", Fill: chartjs.False, PointHoverRadius: 6,
 			PointRadius: 4,
-			BorderWidth: 0, BorderColor: &types.RGBA{150, 150, 150, 150}, PointBackgroundColor: c, BackgroundColor: c, ShowLine: chartjs.False, PointHitRadius: 6}
+			BorderWidth: 0, BorderColor: &types.RGBA{R: 150, G: 150, B: 150, A: 150}, PointBackgroundColor: c, BackgroundColor: c, ShowLine: chartjs.False, PointHitRadius: 6}
 		dataset.XAxisID = xa
 		dataset.YAxisID = ya
 		c1.AddDataset(dataset)
@@ -272,7 +272,8 @@ func plotSex(sexes map[string][]float64, chroms []string, samples []string) (cha
 			vals.ys = append(vals.ys, sexes[chroms[1]][i])
 		}
 		c := randomColor(cn)
-		dataset := chartjs.Dataset{Data: vals, Label: fmt.Sprintf("Inferred CN for %s: %d", chroms[0], cn), Fill: chartjs.False, PointRadius: 6, BorderWidth: 0, BorderColor: &types.RGBA{150, 150, 150, 150}, PointBackgroundColor: c, BackgroundColor: c, ShowLine: chartjs.False, PointHitRadius: 6}
+		dataset := chartjs.Dataset{Data: vals, Label: fmt.Sprintf("Inferred CN for %s: %d", chroms[0], cn), Fill: chartjs.False, PointRadius: 6, BorderWidth: 0,
+			BorderColor: &types.RGBA{R: 150, G: 150, B: 150, A: 150}, PointBackgroundColor: c, BackgroundColor: c, ShowLine: chartjs.False, PointHitRadius: 6}
 		dataset.XAxisID = xa
 		dataset.YAxisID = ya
 		chart.AddDataset(dataset)

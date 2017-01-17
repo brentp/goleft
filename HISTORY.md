@@ -1,10 +1,11 @@
-v0.1.10 (dev)
-=============
+v0.1.10
+=======
 
 + report correct version # (v0.1.9 reported 0.1.8 from CLI)
 + `indexcov`: bigger hit radius in plots == easier to mouse-over points
 + `indexcov`: use vOffset for better resolution of (estimated) depth.
 + `indexcov`: ~2X faster due to optimizations in biogo/hts and buffered IO.
++ `indexcov`: PCA and dosage bias plots (values also reported in .ped file).
 
 v0.1.9
 ======
