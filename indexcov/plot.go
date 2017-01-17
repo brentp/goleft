@@ -83,18 +83,19 @@ func plotDepths(depths [][]float32, samples []string, chrom string, prefix strin
 		chart.AddDataset(dataset)
 	}
 	chart.Options.Responsive = chartjs.False
+	chart.Options.Tooltip = &chartjs.Tooltip{Mode: "nearest"}
 	wtr, err := os.Create(fmt.Sprintf("%s-indexcov-depth-%s.html", prefix, chrom))
 	if err != nil {
 		return err
 	}
-	if err := chart.SaveHTML(wtr, map[string]interface{}{"width": 550, "height": 550}); err != nil {
+	if err := chart.SaveHTML(wtr, map[string]interface{}{"width": 850, "height": 550}); err != nil {
 		return err
 	}
 	return wtr.Close()
 
 }
 
-func plotCounters(counts []*counter, samples []string, prefix string) {
+func plotBins(counts []*counter, samples []string, prefix string) {
 	c := &types.RGBA{R: 110, G: 250, B: 59, A: 240}
 	chart := chartjs.Chart{}
 	xa, err := chart.AddXAxis(chartjs.Axis{Type: chartjs.Linear, Position: chartjs.Bottom, ScaleLabel: &chartjs.ScaleLabel{FontSize: 16,
@@ -123,6 +124,7 @@ func plotCounters(counts []*counter, samples []string, prefix string) {
 	dataset.YAxisID = ya
 	chart.AddDataset(dataset)
 	chart.Options.Responsive = chartjs.False
+	chart.Options.Tooltip = &chartjs.Tooltip{Mode: "nearest"}
 	wtr, err := os.Create(fmt.Sprintf("%s-indexcov-bins.html", prefix))
 	if err != nil {
 		panic(err)
@@ -133,7 +135,7 @@ func plotCounters(counts []*counter, samples []string, prefix string) {
 	}
 	jsfunc := fmt.Sprintf(`
 for (var i =0; i < charts.length; i++) {
-    charts[i].options.tooltips.callbacks.footer = function(tts, data) {
+    charts[i].options.tooltips.callbacks.title = function(tts, data) {
         var names = %s
         var out = []
         tts.forEach(function(ti) {
@@ -180,6 +182,7 @@ func plotPCA(mat *mat64.Dense, prefix string, samples []string, vars []float64) 
 		dataset.YAxisID = ya
 		c1.AddDataset(dataset)
 		c1.Options.Responsive = chartjs.False
+		c1.Options.Tooltip = &chartjs.Tooltip{Mode: "nearest"}
 		charts = append(charts, c1)
 	}
 	wtr, err := os.Create(fmt.Sprintf("%s-indexcov-pca.html", prefix))
@@ -192,7 +195,8 @@ func plotPCA(mat *mat64.Dense, prefix string, samples []string, vars []float64) 
 	}
 	jsfunc := fmt.Sprintf(`
 for (var i =0; i < charts.length; i++) {
-    charts[i].options.tooltips.callbacks.footer = function(tts, data) {
+	charts[i].options.hover.mode = 'index'
+    charts[i].options.tooltips.callbacks.title = function(tts, data) {
         var names = %s
         var out = []
         tts.forEach(function(ti) {
@@ -233,6 +237,7 @@ func plotROCs(rocs [][]float32, samples []string, chrom string) (chartjs.Chart, 
 		chart.AddDataset(dataset)
 	}
 	chart.Options.Responsive = chartjs.False
+	chart.Options.Tooltip = &chartjs.Tooltip{Mode: "nearest"}
 	return chart, nil
 }
 
@@ -273,7 +278,7 @@ func plotSex(sexes map[string][]float64, chroms []string, samples []string) (cha
 		}
 		c := randomColor(cn)
 		dataset := chartjs.Dataset{Data: vals, Label: fmt.Sprintf("Inferred CN for %s: %d", chroms[0], cn), Fill: chartjs.False, PointRadius: 6, BorderWidth: 0,
-			BorderColor: &types.RGBA{R: 150, G: 150, B: 150, A: 150}, PointBackgroundColor: c, BackgroundColor: c, ShowLine: chartjs.False, PointHitRadius: 6}
+			BorderColor: &types.RGBA{R: 90, G: 90, B: 90, A: 150}, PointBackgroundColor: c, BackgroundColor: c, ShowLine: chartjs.False, PointHitRadius: 6}
 		dataset.XAxisID = xa
 		dataset.YAxisID = ya
 		chart.AddDataset(dataset)
@@ -283,7 +288,8 @@ func plotSex(sexes map[string][]float64, chroms []string, samples []string) (cha
 		panic(err)
 	}
 	jsfunc := fmt.Sprintf(`
-	chart.options.tooltips.callbacks.footer = function(tts, data) {
+	chart.options.hover.mode = 'index'
+	chart.options.tooltips.callbacks.title = function(tts, data) {
 		var names = %s
 		var out = []
 		tts.forEach(function(ti) {
@@ -291,5 +297,7 @@ func plotSex(sexes map[string][]float64, chroms []string, samples []string) (cha
 		})
 		return out.join(",")
 	}`, sjson)
+	chart.Options.Responsive = chartjs.False
+	chart.Options.Tooltip = &chartjs.Tooltip{Mode: "nearest"}
 	return chart, jsfunc, nil
 }

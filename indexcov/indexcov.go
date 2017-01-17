@@ -377,7 +377,7 @@ func run(refs []*sam.Reference, idxs []*Index, names []string) ([]chartjs.Chart,
 	if len(names) > 5 {
 		pcs = pca(pca8, names, cli.Prefix)
 	}
-	plotCounters(offs, names, cli.Prefix)
+	plotBins(offs, names, cli.Prefix)
 	return charts, sexes, offs, pcs
 }
 
@@ -517,7 +517,7 @@ func saveCharts(path string, customjs string, charts ...chartjs.Chart) {
 		panic(err)
 	}
 	defer wtr.Close()
-	if err := chartjs.SaveCharts(wtr, map[string]interface{}{"height": 800, "width": 800, "custom": template.JS(customjs)}, charts...); err != nil {
+	if err := chartjs.SaveCharts(wtr, map[string]interface{}{"height": 400, "width": 400, "custom": template.JS(customjs)}, charts...); err != nil {
 		panic(err)
 	}
 }
