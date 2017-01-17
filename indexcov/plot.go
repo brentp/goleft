@@ -87,7 +87,7 @@ func plotDepths(depths [][]float32, samples []string, chrom string, prefix strin
 	if err != nil {
 		return err
 	}
-	if err := chart.SaveHTML(wtr, map[string]interface{}{"width": 800, "height": 800}); err != nil {
+	if err := chart.SaveHTML(wtr, map[string]interface{}{"width": 550, "height": 550}); err != nil {
 		return err
 	}
 	return wtr.Close()
@@ -143,7 +143,7 @@ for (var i =0; i < charts.length; i++) {
     }
 }`, sjson)
 
-	if err := chartjs.SaveCharts(wtr, map[string]interface{}{"custom": template.JS(jsfunc), "width": 800, "height": 800}, chart); err != nil {
+	if err := chartjs.SaveCharts(wtr, map[string]interface{}{"custom": template.JS(jsfunc), "width": 550, "height": 550}, chart); err != nil {
 		panic(err)
 	}
 	wtr.Close()
@@ -202,7 +202,7 @@ for (var i =0; i < charts.length; i++) {
     }
 }`, sjson)
 
-	if err := chartjs.SaveCharts(wtr, map[string]interface{}{"custom": template.JS(jsfunc), "width": 800, "height": 800}, charts...); err != nil {
+	if err := chartjs.SaveCharts(wtr, map[string]interface{}{"custom": template.JS(jsfunc), "width": 550, "height": 550}, charts...); err != nil {
 		panic(err)
 	}
 	wtr.Close()

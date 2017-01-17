@@ -1,3 +1,8 @@
+v0.1.11 (development)
+=====================
++ `indexcov`: make plots a saner size.
+
+
 v0.1.10
 =======
 
