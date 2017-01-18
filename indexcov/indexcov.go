@@ -65,6 +65,9 @@ func (x *Index) init() {
 			sizes = append(sizes, iv-x.refs[k][i])
 		}
 	}
+	if len(sizes) < 1 {
+		log.Fatal("indexcov: no usable chromsomes in bam")
+	}
 
 	// we get the median as it's more stable than mean.
 	sort.Slice(sizes, func(i, j int) bool { return sizes[i] < sizes[j] })

@@ -13,7 +13,7 @@ import (
 	"github.com/brentp/goleft/indexcov"
 )
 
-const Version = "0.1.10"
+const Version = "0.1.11-dev"
 
 type progPair struct {
 	help string
