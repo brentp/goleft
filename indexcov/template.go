@@ -6,7 +6,6 @@ const chartTemplate = `<!DOCTYPE html>
 		<script src="{{ index . "JQuery" }}"></script>
 		<script src="{{ index . "ChartJS" }}"></script>
 		<style type="text/css">
-
 section {
     width: 96%;
     height: 425px;
@@ -17,8 +16,8 @@ section {
 
 .tt {
 	font-family: Lucida Console;
-    border: 1px solid #aaa;
-    padding: 1px;
+    border: 2px solid #aaa;
+    padding: 2px;
 }
 
 .one {
@@ -47,8 +46,10 @@ section {
 	</div>
 
 	</section>
-
 	<hr>
+
+	<section>
+
 
 	<section>
 	<div class="one">
@@ -62,6 +63,28 @@ section {
 	</div>
 
 	</section>
+
+	<section>
+{{ $many := index . "many" }}
+{{ $prefix := index . "prefix" }}
+{{ if $many }}
+		many
+{{ else }}
+	<div class="one">
+	<span class="tt">Depth Plots</span>
+	{{ $chroms := index . "chroms" }}
+	{{ range $idx, $chrom := $chroms }}
+	<p><a href="{{ $prefix }}-indexcov-depth-{{ $chrom }}.html">{{ $chrom }}</a></p>
+	{{ end }}
+
+	</div>
+
+	<div class="two">
+	<span class="tt">Coverage Plots</span>
+	<p><a href="{{ $prefix }}-indexcov-roc.html">Coverage</a></p>
+	</div>
+{{ end }}
+	<section>
     </body>
     <script>
 	Chart.defaults.line.cubicInterpolationMode = 'monotone';

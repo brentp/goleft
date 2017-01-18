@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -263,17 +264,17 @@ func Main() {
 		names = append(names, getShortName(b))
 	}
 
-	charts, sexes, counts, pca8 := run(refs, idxs, names)
+	charts, sexes, counts, pca8, chromNames := run(refs, idxs, names)
 
 	chartjs.XFloatFormat = "%.2f"
 	saveCharts(fmt.Sprintf("%s-indexcov-roc.html", cli.Prefix), "", charts...)
-	writeIndex(sexes, counts, cli.Sex, names, cli.Prefix, pca8)
+	writeIndex(sexes, counts, cli.Sex, names, cli.Prefix, pca8, chromNames)
 }
 
 // if there are more samples than this then the depth plots won't be drawn.
 const maxSamples = 100
 
-func run(refs []*sam.Reference, idxs []*Index, names []string) ([]chartjs.Chart, map[string][]float64, []*counter, [][]uint8) {
+func run(refs []*sam.Reference, idxs []*Index, names []string) ([]chartjs.Chart, map[string][]float64, []*counter, [][]uint8, []string) {
 	// keep a slice of charts since we plot all of the coverage roc charts in a single html file.
 	charts := make([]chartjs.Chart, 0, len(refs))
 	sexes := make(map[string][]float64)
@@ -303,6 +304,7 @@ func run(refs []*sam.Reference, idxs []*Index, names []string) ([]chartjs.Chart,
 	defer rtmp.Close()
 	rfh := bufio.NewWriter(rtmp)
 	defer rfh.Flush()
+	chromNames := make([]string, 0, len(refs))
 
 	fmt.Fprintf(bgz, "#chrom\tstart\tend\t%s\n", strings.Join(names, "\t"))
 	for ir, ref := range refs {
@@ -358,6 +360,7 @@ func run(refs []*sam.Reference, idxs []*Index, names []string) ([]chartjs.Chart,
 		if len(depths[longesti]) > 0 {
 			c := writeROCs(counts, names, chrom, cli.Prefix, rfh)
 			if cli.IncludeGL || !strings.HasPrefix(chrom, "GL") {
+				chromNames = append(chromNames, chrom)
 				if len(names) < maxSamples {
 					charts = append(charts, c)
 					if err := plotDepths(depths, names, chrom, cli.Prefix); err != nil {
@@ -376,7 +379,7 @@ func run(refs []*sam.Reference, idxs []*Index, names []string) ([]chartjs.Chart,
 			}
 		}
 	}
-	return charts, sexes, offs, pca8
+	return charts, sexes, offs, pca8, chromNames
 }
 
 func pca(pca8 [][]uint8, samples []string) (*mat64.Dense, []chartjs.Chart, string) {
@@ -416,7 +419,7 @@ func pca(pca8 [][]uint8, samples []string) (*mat64.Dense, []chartjs.Chart, strin
 }
 
 // write an index.html and a ped file. includes the PC projections and inferred sexes.
-func writeIndex(sexes map[string][]float64, counts []*counter, keys []string, samples []string, prefix string, pca8 [][]uint8) {
+func writeIndex(sexes map[string][]float64, counts []*counter, keys []string, samples []string, prefix string, pca8 [][]uint8, chromNames []string) {
 	if len(sexes) == 0 {
 		return
 	}
@@ -445,7 +448,6 @@ func writeIndex(sexes map[string][]float64, counts []*counter, keys []string, sa
 	}
 
 	fmt.Fprintf(f, "#family_id\tsample_id\tpaternal_id\tmaternal_id\tsex\tphenotype\t%s\n", strings.Join(hdr, "\t"))
-
 	tmpl := "unknown\t%s\t-9\t-9\t%d\t-9\t"
 	for i, s := range samples {
 		inferred := int(0.5 + sexes[keys[0]][i])
@@ -488,8 +490,12 @@ func writeIndex(sexes map[string][]float64, counts []*counter, keys []string, sa
 		panic(err)
 	}
 
-	chartMap := map[string]interface{}{"pcajs": template.JS(pcajs), "pcbjs": template.JS(pcajs), "template": chartTemplate, "pca": pcaPlots[0],
-		"pcb": pcaPlots[1], "sex": *sexChart, "sexjs": template.JS(sexjs), "bin": binChart, "binjs": template.JS(binjs)}
+	chartMap := map[string]interface{}{"pcajs": template.JS(pcajs), "pcbjs": template.JS(pcajs),
+		"template": chartTemplate, "pca": pcaPlots[0],
+		"pcb": pcaPlots[1], "sex": *sexChart, "sexjs": template.JS(sexjs),
+		"bin": binChart, "binjs": template.JS(binjs),
+		"prefix": filepath.Base(prefix), "chroms": chromNames}
+	chartMap["many"] = len(samples) > maxSamples
 	if err := chartjs.SaveCharts(wtr, chartMap, chartjs.Chart{}); err != nil {
 		panic(err)
 	}
