@@ -210,7 +210,10 @@ func zero(ints []int) {
 func Main() {
 
 	chartjs.XFloatFormat = "%.0f"
-	arg.MustParse(cli)
+	p := arg.MustParse(cli)
+	if len(cli.Bam) == 0 {
+		p.Fail("indexcov: expected at least 1 bam")
+	}
 	if strings.HasSuffix(cli.Prefix, "/") {
 		cli.Prefix = cli.Prefix + "qc"
 	}
