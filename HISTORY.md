@@ -1,6 +1,7 @@
 v0.1.11 (development)
 =====================
 + `indexcov`: make plots a saner size.
++ `indexdov`: output an index.html page that summarizes findings (in progress)
 
 
 v0.1.10

@@ -3,7 +3,6 @@ package indexcov
 import (
 	"encoding/json"
 	"fmt"
-	"html/template"
 	"math/rand"
 	"os"
 
@@ -95,7 +94,7 @@ func plotDepths(depths [][]float32, samples []string, chrom string, prefix strin
 
 }
 
-func plotBins(counts []*counter, samples []string, prefix string) {
+func plotBins(counts []*counter, samples []string) (chartjs.Chart, string) {
 	c := &types.RGBA{R: 110, G: 250, B: 59, A: 240}
 	chart := chartjs.Chart{}
 	xa, err := chart.AddXAxis(chartjs.Axis{Type: chartjs.Linear, Position: chartjs.Bottom, ScaleLabel: &chartjs.ScaleLabel{FontSize: 16,
@@ -125,34 +124,25 @@ func plotBins(counts []*counter, samples []string, prefix string) {
 	chart.AddDataset(dataset)
 	chart.Options.Responsive = chartjs.False
 	chart.Options.Tooltip = &chartjs.Tooltip{Mode: "nearest"}
-	wtr, err := os.Create(fmt.Sprintf("%s-indexcov-bins.html", prefix))
-	if err != nil {
-		panic(err)
-	}
+	chart.Options.Legend = &chartjs.Legend{Display: chartjs.False}
 	sjson, err := json.Marshal(samples)
 	if err != nil {
 		panic(err)
 	}
 	jsfunc := fmt.Sprintf(`
-for (var i =0; i < charts.length; i++) {
-    charts[i].options.tooltips.callbacks.title = function(tts, data) {
+    bin_chart.options.tooltips.callbacks.title = function(tts, data) {
         var names = %s
         var out = []
         tts.forEach(function(ti) {
             out.push(names[ti.index])
         })
         return out.join(",")
-    }
-}`, sjson)
-
-	if err := chartjs.SaveCharts(wtr, map[string]interface{}{"custom": template.JS(jsfunc), "width": 550, "height": 550}, chart); err != nil {
-		panic(err)
-	}
-	wtr.Close()
+    }`, sjson)
+	return chart, jsfunc
 
 }
 
-func plotPCA(mat *mat64.Dense, prefix string, samples []string, vars []float64) {
+func plotPCA(mat *mat64.Dense, samples []string, vars []float64) ([]chartjs.Chart, string) {
 
 	var charts []chartjs.Chart
 	c := &types.RGBA{R: 110, G: 250, B: 59, A: 240}
@@ -182,35 +172,26 @@ func plotPCA(mat *mat64.Dense, prefix string, samples []string, vars []float64) 
 		dataset.YAxisID = ya
 		c1.AddDataset(dataset)
 		c1.Options.Responsive = chartjs.False
+		c1.Options.Legend = &chartjs.Legend{Display: chartjs.False}
 		c1.Options.Tooltip = &chartjs.Tooltip{Mode: "nearest"}
 		charts = append(charts, c1)
-	}
-	wtr, err := os.Create(fmt.Sprintf("%s-indexcov-pca.html", prefix))
-	if err != nil {
-		panic(err)
 	}
 	sjson, err := json.Marshal(samples)
 	if err != nil {
 		panic(err)
 	}
 	jsfunc := fmt.Sprintf(`
-for (var i =0; i < charts.length; i++) {
-	charts[i].options.hover.mode = 'index'
-    charts[i].options.tooltips.callbacks.title = function(tts, data) {
+	chart.options.hover.mode = 'index';
+    chart.options.tooltips.callbacks.title = function(tts, data) {
         var names = %s
         var out = []
         tts.forEach(function(ti) {
             out.push(names[ti.index])
         })
         return out.join(",")
-    }
-}`, sjson)
+    }`, sjson)
 
-	if err := chartjs.SaveCharts(wtr, map[string]interface{}{"custom": template.JS(jsfunc), "width": 550, "height": 550}, charts...); err != nil {
-		panic(err)
-	}
-	wtr.Close()
-
+	return charts, jsfunc
 }
 
 func plotROCs(rocs [][]float32, samples []string, chrom string) (chartjs.Chart, error) {
@@ -241,7 +222,7 @@ func plotROCs(rocs [][]float32, samples []string, chrom string) (chartjs.Chart, 
 	return chart, nil
 }
 
-func plotSex(sexes map[string][]float64, chroms []string, samples []string) (chartjs.Chart, string, error) {
+func plotSex(sexes map[string][]float64, chroms []string, samples []string) (*chartjs.Chart, string, error) {
 	chart := chartjs.Chart{Label: "sex"}
 	tmp := sexes["_inferred"]
 	inferred := make([]int, len(tmp))
@@ -254,13 +235,13 @@ func plotSex(sexes map[string][]float64, chroms []string, samples []string) (cha
 		ScaleLabel: &chartjs.ScaleLabel{FontSize: 16, LabelString: chroms[0] + " Copy Number",
 			Display: chartjs.True}, Tick: &chartjs.Tick{Min: 0}})
 	if err != nil {
-		return chart, "", err
+		return nil, "", err
 	}
 	ya, err := chart.AddYAxis(chartjs.Axis{Type: chartjs.Linear, Position: chartjs.Left,
 		ScaleLabel: &chartjs.ScaleLabel{FontSize: 16, LabelString: chroms[1] + " Copy Number",
 			Display: chartjs.True}, Tick: &chartjs.Tick{Min: 0}})
 	if err != nil {
-		return chart, "", err
+		return nil, "", err
 	}
 	// chartjs separates into datasets so we need to track which samples in which datasets.
 	jssamples := make([][]string, 0, 2)
@@ -299,5 +280,5 @@ func plotSex(sexes map[string][]float64, chroms []string, samples []string) (cha
 	}`, sjson)
 	chart.Options.Responsive = chartjs.False
 	chart.Options.Tooltip = &chartjs.Tooltip{Mode: "nearest"}
-	return chart, jsfunc, nil
+	return &chart, jsfunc, nil
 }

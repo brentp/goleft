@@ -25,7 +25,7 @@ import (
 // Ploidy indicates the expected ploidy of the samples.
 var Ploidy = 2
 
-var cli = struct {
+var cli = &struct {
 	Prefix    string   `arg:"-p,required,help:prefix for output files"`
 	IncludeGL bool     `arg:"-e,help:plot GL chromosomes like: GL000201.1 which are not plotted by default"`
 	Sex       []string `arg:"-X,help:name of the sex chromosome(s) used to infer sex; The first will be used to populate the sex column in a ped file."`
@@ -210,7 +210,7 @@ func zero(ints []int) {
 func Main() {
 
 	chartjs.XFloatFormat = "%.0f"
-	arg.MustParse(&cli)
+	arg.MustParse(cli)
 	if strings.HasSuffix(cli.Prefix, "/") {
 		cli.Prefix = cli.Prefix + "qc"
 	}
@@ -235,7 +235,7 @@ func Main() {
 	rdr.Close()
 	brdr.Close()
 	if refs == nil {
-		panic(fmt.Sprintf("unable to find chromosome: %s", cli.Chrom))
+		panic(fmt.Sprintf("indexcov: chromosome: %s not found", cli.Chrom))
 	}
 
 	var idxs []*Index
@@ -260,17 +260,17 @@ func Main() {
 		names = append(names, getShortName(b))
 	}
 
-	charts, sexes, counts, pcs := run(refs, idxs, names)
+	charts, sexes, counts, pca8 := run(refs, idxs, names)
 
 	chartjs.XFloatFormat = "%.2f"
 	saveCharts(fmt.Sprintf("%s-indexcov-roc.html", cli.Prefix), "", charts...)
-	writePed(sexes, counts, cli.Sex, names, cli.Prefix, pcs)
+	writeIndex(sexes, counts, cli.Sex, names, cli.Prefix, pca8)
 }
 
 // if there are more samples than this then the depth plots won't be drawn.
 const maxSamples = 100
 
-func run(refs []*sam.Reference, idxs []*Index, names []string) ([]chartjs.Chart, map[string][]float64, []*counter, *mat64.Dense) {
+func run(refs []*sam.Reference, idxs []*Index, names []string) ([]chartjs.Chart, map[string][]float64, []*counter, [][]uint8) {
 	// keep a slice of charts since we plot all of the coverage roc charts in a single html file.
 	charts := make([]chartjs.Chart, 0, len(refs))
 	sexes := make(map[string][]float64)
@@ -373,15 +373,10 @@ func run(refs []*sam.Reference, idxs []*Index, names []string) ([]chartjs.Chart,
 			}
 		}
 	}
-	var pcs *mat64.Dense
-	if len(names) > 5 {
-		pcs = pca(pca8, names, cli.Prefix)
-	}
-	plotBins(offs, names, cli.Prefix)
-	return charts, sexes, offs, pcs
+	return charts, sexes, offs, pca8
 }
 
-func pca(pca8 [][]uint8, samples []string, prefix string) *mat64.Dense {
+func pca(pca8 [][]uint8, samples []string) (*mat64.Dense, []chartjs.Chart, string) {
 	t := time.Now()
 	mat := mat64.NewDense(len(pca8), len(pca8[0]), nil)
 	row := make([]float64, len(pca8[0]))
@@ -404,21 +399,21 @@ func pca(pca8 [][]uint8, samples []string, prefix string) *mat64.Dense {
 		log.Printf("got: %d, principal components", len(vars))
 		if k < 3 {
 			log.Printf("indexcov: %d principal components, not plotting", k)
-			return nil
+			return nil, nil, ""
 		}
 	}
 	vars = vars[:k]
 
 	var proj mat64.Dense
 	proj.Mul(mat, pc.Vectors(nil).Slice(0, len(pca8[0]), 0, k))
-	plotPCA(&proj, prefix, samples, vars)
+	pcaPlots, customjs := plotPCA(&proj, samples, vars)
 
 	log.Printf("indexcov: completed PCA in: %.3f seconds", time.Since(t).Seconds())
-	return &proj
+	return &proj, pcaPlots, customjs
 }
 
-// write a ped file. includes the PC projections and inferred sexes.
-func writePed(sexes map[string][]float64, counts []*counter, keys []string, samples []string, prefix string, pcs *mat64.Dense) {
+// write an index.html and a ped file. includes the PC projections and inferred sexes.
+func writeIndex(sexes map[string][]float64, counts []*counter, keys []string, samples []string, prefix string, pca8 [][]uint8) {
 	if len(sexes) == 0 {
 		return
 	}
@@ -428,6 +423,9 @@ func writePed(sexes map[string][]float64, counts []*counter, keys []string, samp
 			os.Exit(1)
 		}
 	}
+	pcs, pcaPlots, pcajs := pca(pca8, samples)
+	binChart, binjs := plotBins(counts, samples)
+
 	sexes["_inferred"] = make([]float64, len(sexes[keys[0]]))
 	f, err := os.Create(fmt.Sprintf("%s-indexcov.ped", prefix))
 	if err != nil {
@@ -473,13 +471,26 @@ func writePed(sexes map[string][]float64, counts []*counter, keys []string, samp
 
 		fmt.Fprintln(f, strings.Join(s, "\t"))
 	}
+	var sexChart *chartjs.Chart
+	var sexjs string
+
 	if len(keys) > 1 {
-		chart, customjs, err := plotSex(sexes, keys[:2], samples)
+		sexChart, sexjs, err = plotSex(sexes, keys[:2], samples)
 		if err != nil {
 			panic(err)
 		}
-		saveCharts(fmt.Sprintf("%s-indexcov-sex.html", cli.Prefix), customjs, chart)
 	}
+	wtr, err := os.Create(fmt.Sprintf("%s-indexcov-index.html", cli.Prefix))
+	if err != nil {
+		panic(err)
+	}
+
+	chartMap := map[string]interface{}{"pcajs": template.JS(pcajs), "pcbjs": template.JS(pcajs), "template": chartTemplate, "pca": pcaPlots[0],
+		"pcb": pcaPlots[1], "sex": *sexChart, "sexjs": template.JS(sexjs), "bin": binChart, "binjs": template.JS(binjs)}
+	if err := chartjs.SaveCharts(wtr, chartMap, chartjs.Chart{}); err != nil {
+		panic(err)
+	}
+	wtr.Close()
 }
 
 // GetCN returns an float per sample estimating the number of copies of that chromosome.
