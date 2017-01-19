@@ -3,6 +3,7 @@ package indexcov
 const chartTemplate = `<!DOCTYPE html>
 <html>
     <head>
+	<title>{{ index . "name" }}:indexcov</title>
 		<script src="{{ index . "JQuery" }}"></script>
 		<script src="{{ index . "ChartJS" }}"></script>
 		<style type="text/css">
@@ -66,7 +67,7 @@ section {
 
 	<section>
 {{ $notmany := index . "notmany" }}
-{{ $prefix := index . "prefix" }}
+{{ $name := index . "name" }}
 
 	<div class="one">
 	<span class="tt">Coverage Plots</span>
@@ -74,7 +75,7 @@ section {
 	{{ $chroms := index . "chroms" }}
 	{{ range $idx, $chrom := $chroms }}
 		<p>
-		<a href="{{ $prefix }}-indexcov-roc-{{ $chrom }}.html"><img src="{{ $prefix }}-indexcov-roc-{{ $chrom }}.png" /></a>
+		<a href="{{ $name }}-indexcov-roc-{{ $chrom }}.html"><img src="{{ $name }}-indexcov-roc-{{ $chrom }}.png" /></a>
 		</p>
 	{{ end }}
 
@@ -85,9 +86,9 @@ section {
 	{{ range $idx, $chrom := $chroms }}
 		<p>
 {{ if $notmany }}
-		<a href="{{ $prefix }}-indexcov-depth-{{ $chrom }}.html"><img src="{{ $prefix }}-indexcov-depth-{{ $chrom }}.png" /></a>
+		<a href="{{ $name }}-indexcov-depth-{{ $chrom }}.html"><img src="{{ $name }}-indexcov-depth-{{ $chrom }}.png" /></a>
 {{ else }}
-		<img src="{{ $prefix }}-indexcov-depth-{{ $chrom }}.png" />
+		<img src="{{ $name }}-indexcov-depth-{{ $chrom }}.png" />
 {{ end }}
 
 		</p>

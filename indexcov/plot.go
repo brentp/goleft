@@ -86,7 +86,7 @@ func randomColor(s int) *types.RGBA {
 		A: 240}
 }
 
-func plotDepths(depths [][]float32, samples []string, chrom string, prefix string, writeHTML bool) error {
+func plotDepths(depths [][]float32, samples []string, chrom string, base string, writeHTML bool) error {
 	chart := chartjs.Chart{Label: chrom}
 	xa, err := chart.AddXAxis(chartjs.Axis{Type: chartjs.Linear, Position: chartjs.Bottom, ScaleLabel: &chartjs.ScaleLabel{FontSize: 16, LabelString: "position on " + chrom, Display: chartjs.True}})
 	if err != nil {
@@ -111,7 +111,7 @@ func plotDepths(depths [][]float32, samples []string, chrom string, prefix strin
 	chart.Options.Responsive = chartjs.False
 	chart.Options.Tooltip = &chartjs.Tooltip{Mode: "nearest"}
 	if writeHTML {
-		wtr, err := os.Create(fmt.Sprintf("%s-indexcov-depth-%s.html", prefix, chrom))
+		wtr, err := os.Create(fmt.Sprintf("%s-depth-%s.html", base, chrom))
 		if err != nil {
 			return err
 		}
@@ -122,7 +122,7 @@ func plotDepths(depths [][]float32, samples []string, chrom string, prefix strin
 			return err
 		}
 	}
-	asPng(fmt.Sprintf("%s-indexcov-depth-%s.png", prefix, chrom), chart, 4, 3)
+	asPng(fmt.Sprintf("%s-depth-%s.png", base, chrom), chart, 4, 3)
 
 	return nil
 }

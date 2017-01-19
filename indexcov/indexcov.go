@@ -28,7 +28,7 @@ import (
 var Ploidy = 2
 
 var cli = &struct {
-	Prefix    string   `arg:"-p,required,help:prefix for output files"`
+	Directory string   `arg:"-d,required,help:directory for output files"`
 	IncludeGL bool     `arg:"-e,help:plot GL chromosomes like: GL000201.1 which are not plotted by default"`
 	Sex       []string `arg:"-X,help:name of the sex chromosome(s) used to infer sex; The first will be used to populate the sex column in a ped file."`
 	Chrom     string   `arg:"-c,help:optional chromosome to extract depth. default is entire genome."`
@@ -195,8 +195,8 @@ func getShortName(b string) string {
 	return vs[len(vs)-1]
 }
 
-func getWriter(prefix string) (*bgzf.Writer, error) {
-	fh, err := os.Create(fmt.Sprintf("%s-indexcov.bed.gz", prefix))
+func getWriter(base string) (*bgzf.Writer, error) {
+	fh, err := os.Create(fmt.Sprintf("%s.bed.gz", base))
 	if err != nil {
 		return nil, err
 	}
@@ -212,6 +212,17 @@ func zero(ints []int) {
 	}
 }
 
+func getDirectory(path string) (bool, error) {
+	fi, err := os.Stat(path)
+	if err != nil {
+		if err := os.MkdirAll(path, 0755); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+	return fi.IsDir(), nil
+}
+
 // Main is called from the goleft dispatcher
 func Main() {
 
@@ -220,8 +231,9 @@ func Main() {
 	if len(cli.Bam) == 0 {
 		p.Fail("indexcov: expected at least 1 bam")
 	}
-	if strings.HasSuffix(cli.Prefix, "/") {
-		cli.Prefix = cli.Prefix + "qc"
+
+	if exists, err := getDirectory(cli.Directory); err != nil || !exists {
+		log.Fatalf("indexcov: error creating specified directory: %s, %s", cli.Directory, err)
 	}
 
 	rdr, err := os.Open(cli.Bam[0])
@@ -269,10 +281,12 @@ func Main() {
 	close(ch)
 	wg.Wait()
 
-	sexes, counts, pca8, chromNames := run(refs, idxs, names)
+	sexes, counts, pca8, chromNames := run(refs, idxs, names, getBase(cli.Directory))
 
 	chartjs.XFloatFormat = "%.2f"
-	writeIndex(sexes, counts, cli.Sex, names, cli.Prefix, pca8, chromNames)
+	if indexPath := writeIndex(sexes, counts, cli.Sex, names, cli.Directory, pca8, chromNames); indexPath != "" {
+		fmt.Fprintf(os.Stderr, "indexcov finished: see %s for overview of output\n", indexPath)
+	}
 }
 
 type rdi struct {
@@ -306,7 +320,7 @@ func readIndex(r rdi) (*Index, string, int) {
 // if there are more samples than this then the depth plots won't be drawn.
 const maxSamples = 100
 
-func run(refs []*sam.Reference, idxs []*Index, names []string) (map[string][]float64, []*counter, [][]uint8, []string) {
+func run(refs []*sam.Reference, idxs []*Index, names []string, base string) (map[string][]float64, []*counter, [][]uint8, []string) {
 	// keep a slice of charts since we plot all of the coverage roc charts in a single html file.
 	sexes := make(map[string][]float64)
 	counts := make([][]int, len(idxs))
@@ -320,7 +334,7 @@ func run(refs []*sam.Reference, idxs []*Index, names []string) (map[string][]flo
 		log.Printf("indexcov: only plotting ROC, sex, PCA and bin plots (not depth) because # of samples %d is > %d\n", len(idxs), maxSamples)
 	}
 
-	tmp, err := getWriter(cli.Prefix)
+	tmp, err := getWriter(base)
 	if err != nil {
 		panic(err)
 	}
@@ -328,7 +342,7 @@ func run(refs []*sam.Reference, idxs []*Index, names []string) (map[string][]flo
 	bgz := bufio.NewWriter(tmp)
 	defer bgz.Flush()
 
-	rtmp, err := os.Create(fmt.Sprintf("%s-indexcov.roc", cli.Prefix))
+	rtmp, err := os.Create(fmt.Sprintf("%s.roc", base))
 	if err != nil {
 		panic(err)
 	}
@@ -389,18 +403,18 @@ func run(refs []*sam.Reference, idxs []*Index, names []string) (map[string][]flo
 			fmt.Fprintf(bgz, "%s\t%d\t%d\t%s\n", chrom, i*16384, (i+1)*16384, depthsFor(depths, i))
 		}
 		if len(depths[longesti]) > 0 {
-			c := writeROCs(counts, names, chrom, cli.Prefix, rfh)
+			c := writeROCs(counts, names, chrom, rfh)
 			if cli.IncludeGL || !strings.HasPrefix(chrom, "GL") {
 				chromNames = append(chromNames, chrom)
-				if err := plotDepths(depths, names, chrom, cli.Prefix, len(names) < maxSamples); err != nil {
+				if err := plotDepths(depths, names, chrom, base, len(names) < maxSamples); err != nil {
 					panic(err)
 				}
 				tmp := chartjs.XFloatFormat
 				chartjs.XFloatFormat = "%.2f"
 				c.Options.Legend = &chartjs.Legend{Display: types.False}
-				saveCharts(fmt.Sprintf("%s-indexcov-roc-%s.html", cli.Prefix, chrom), "", c)
+				saveCharts(fmt.Sprintf("%s-roc-%s.html", base, chrom), "", c)
 				chartjs.XFloatFormat = tmp
-				asPng(fmt.Sprintf("%s-indexcov-roc-%s.png", cli.Prefix, chrom), c, 4, 3)
+				asPng(fmt.Sprintf("%s-roc-%s.png", base, chrom), c, 4, 3)
 			}
 		}
 	}
@@ -443,10 +457,16 @@ func pca(pca8 [][]uint8, samples []string) (*mat64.Dense, []chartjs.Chart, strin
 	return &proj, pcaPlots, customjs
 }
 
+func getBase(directory string) string {
+	prefix := filepath.Base(directory)
+	return directory + string(os.PathSeparator) + prefix + "-indexcov"
+}
+
 // write an index.html and a ped file. includes the PC projections and inferred sexes.
-func writeIndex(sexes map[string][]float64, counts []*counter, keys []string, samples []string, prefix string, pca8 [][]uint8, chromNames []string) {
+func writeIndex(sexes map[string][]float64, counts []*counter, keys []string, samples []string, directory string, pca8 [][]uint8, chromNames []string) string {
 	if len(sexes) == 0 {
-		return
+		log.Println("sex chromosomes not found, not writing index")
+		return ""
 	}
 	for _, k := range keys {
 		if _, ok := sexes[k]; !ok {
@@ -458,7 +478,7 @@ func writeIndex(sexes map[string][]float64, counts []*counter, keys []string, sa
 	binChart, binjs := plotBins(counts, samples)
 
 	sexes["_inferred"] = make([]float64, len(sexes[keys[0]]))
-	f, err := os.Create(fmt.Sprintf("%s-indexcov.ped", prefix))
+	f, err := os.Create(fmt.Sprintf("%s.ped", getBase(directory)))
 	if err != nil {
 		panic(err)
 	}
@@ -510,7 +530,8 @@ func writeIndex(sexes map[string][]float64, counts []*counter, keys []string, sa
 			panic(err)
 		}
 	}
-	wtr, err := os.Create(fmt.Sprintf("%s-indexcov-index.html", cli.Prefix))
+	indexPath := fmt.Sprintf("%s%cindex.html", directory, os.PathSeparator)
+	wtr, err := os.Create(indexPath)
 	if err != nil {
 		panic(err)
 	}
@@ -519,12 +540,14 @@ func writeIndex(sexes map[string][]float64, counts []*counter, keys []string, sa
 		"template": chartTemplate, "pca": pcaPlots[0],
 		"pcb": pcaPlots[1], "sex": *sexChart, "sexjs": template.JS(sexjs),
 		"bin": binChart, "binjs": template.JS(binjs),
-		"prefix": filepath.Base(prefix), "chroms": chromNames}
+		"prefix": getBase(directory),
+		"name":   filepath.Base(directory), "chroms": chromNames}
 	chartMap["notmany"] = len(samples) <= maxSamples
 	if err := chartjs.SaveCharts(wtr, chartMap, chartjs.Chart{}); err != nil {
 		panic(err)
 	}
 	wtr.Close()
+	return indexPath
 }
 
 // GetCN returns an float per sample estimating the number of copies of that chromosome.
@@ -562,7 +585,7 @@ func saveCharts(path string, customjs string, charts ...chartjs.Chart) {
 		panic(err)
 	}
 	defer wtr.Close()
-	if err := chartjs.SaveCharts(wtr, map[string]interface{}{"height": 400, "width": 400, "custom": template.JS(customjs)}, charts...); err != nil {
+	if err := chartjs.SaveCharts(wtr, map[string]interface{}{"height": 550, "width": 650, "custom": template.JS(customjs)}, charts...); err != nil {
 		panic(err)
 	}
 }
@@ -577,7 +600,7 @@ func getROCs(counts [][]int) [][]float32 {
 
 }
 
-func writeROCs(counts [][]int, names []string, chrom string, prefix string, fh io.Writer) chartjs.Chart {
+func writeROCs(counts [][]int, names []string, chrom string, fh io.Writer) chartjs.Chart {
 	rocs := getROCs(counts)
 	chart, err := plotROCs(rocs, names, chrom)
 	if err != nil {

@@ -1,9 +1,11 @@
 v0.1.11 (development)
 =====================
 + `indexcov`: make plots a saner size.
-+ `indexdov`: output an index.html page that summarizes findings and links to other pages.
++ `indexcov`: output an index.html page that summarizes findings and links to other pages.
               the index contains static pngs for coverage and depth that link to the interactive
               HTML pages for each chromosome.
++ `indexcov`: remove --prefix argument in favor of -d/--directory and write the overview page index
+              index.html
 
 
 v0.1.10

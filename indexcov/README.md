@@ -16,7 +16,7 @@ Usage
 =====
 
 ```
-goleft indexcov --prefix my-project-dir/ *.bam
+goleft indexcov --directory my-project-dir/ *.bam
 ```
 
 This will create a number of text files described in the [Files](#Files) section below.
