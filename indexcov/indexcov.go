@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	arg "github.com/alexflint/go-arg"
@@ -40,6 +41,7 @@ var MaxCN = float32(6)
 // Index wraps a bam.Index to cache calculated values.
 type Index struct {
 	*bam.Index
+	path string
 
 	//mu                *sync.RWMutex
 	medianSizePerTile float64
@@ -66,7 +68,7 @@ func (x *Index) init() {
 		}
 	}
 	if len(sizes) < 1 {
-		log.Fatal("indexcov: no usable chromsomes in bam")
+		log.Fatal("indexcov: no usable chromsomes in bam: %s", x.path)
 	}
 
 	// we get the median as it's more stable than mean.
@@ -245,32 +247,60 @@ func Main() {
 		panic(fmt.Sprintf("indexcov: chromosome: %s not found", cli.Chrom))
 	}
 
-	var idxs []*Index
-	names := make([]string, 0, len(cli.Bam))
-
-	for _, b := range cli.Bam {
-
-		rdr, err = os.Open(b + ".bai")
-		if err != nil {
-			var terr error
-			rdr, terr = os.Open(b[:(len(b)-4)] + ".bai")
-			if terr != nil {
-				panic(err)
+	names := make([]string, len(cli.Bam))
+	idxs := make([]*Index, len(cli.Bam))
+	ch := make(chan rdi, 4)
+	wg := &sync.WaitGroup{}
+	wg.Add(4)
+	for k := 0; k < 4; k++ {
+		go func() {
+			for r := range ch {
+				idx, name, i := readIndex(r)
+				names[i] = name
+				idxs[i] = idx
 			}
-		}
-
-		idx, err := bam.ReadIndex(bufio.NewReader(rdr))
-		if err != nil {
-			panic(err)
-		}
-		idxs = append(idxs, &Index{Index: idx})
-		names = append(names, getShortName(b))
+			wg.Done()
+		}()
 	}
+
+	for i, b := range cli.Bam {
+		ch <- rdi{bamPath: b, i: i}
+	}
+	close(ch)
+	wg.Wait()
 
 	sexes, counts, pca8, chromNames := run(refs, idxs, names)
 
 	chartjs.XFloatFormat = "%.2f"
 	writeIndex(sexes, counts, cli.Sex, names, cli.Prefix, pca8, chromNames)
+}
+
+type rdi struct {
+	bamPath string
+	i       int
+}
+
+// get an initialized index from a bamPath.
+// `i` is used in the return when parallelized to keep same order.
+func readIndex(r rdi) (*Index, string, int) {
+	b := r.bamPath
+
+	rdr, err := os.Open(b + ".bai")
+	if err != nil {
+		var terr error
+		rdr, terr = os.Open(b[:(len(b)-4)] + ".bai")
+		if terr != nil {
+			panic(err)
+		}
+	}
+
+	dx, err := bam.ReadIndex(bufio.NewReader(rdr))
+	if err != nil {
+		panic(err)
+	}
+	idx := &Index{Index: dx, path: b}
+	idx.init()
+	return idx, getShortName(b), r.i
 }
 
 // if there are more samples than this then the depth plots won't be drawn.
@@ -490,7 +520,7 @@ func writeIndex(sexes map[string][]float64, counts []*counter, keys []string, sa
 		"pcb": pcaPlots[1], "sex": *sexChart, "sexjs": template.JS(sexjs),
 		"bin": binChart, "binjs": template.JS(binjs),
 		"prefix": filepath.Base(prefix), "chroms": chromNames}
-	chartMap["many"] = len(samples) > maxSamples
+	chartMap["notmany"] = len(samples) <= maxSamples
 	if err := chartjs.SaveCharts(wtr, chartMap, chartjs.Chart{}); err != nil {
 		panic(err)
 	}

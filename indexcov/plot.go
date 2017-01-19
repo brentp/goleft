@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"image/color"
+	"math"
 	"math/rand"
 	"os"
 
@@ -330,6 +331,18 @@ func asPng(path string, chart chartjs.Chart, wInches float64, hInches float64) {
 			data = data.(*vs).Sample(10)
 		} else if data.(*vs).Len() > 1000 {
 			data = data.(*vs).Sample(5)
+		} else {
+			// no data for some chromosome.
+			bad := false
+			for _, d := range data.Ys() {
+				if math.IsNaN(d) {
+					bad = true
+					break
+				}
+			}
+			if bad {
+				continue
+			}
 		}
 
 		l, err := plotter.NewLine(data.(*vs))

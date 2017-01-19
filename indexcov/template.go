@@ -65,33 +65,35 @@ section {
 	</section>
 
 	<section>
-{{ $many := index . "many" }}
+{{ $notmany := index . "notmany" }}
 {{ $prefix := index . "prefix" }}
-{{ if $many }}
-		many
-{{ else }}
+
 	<div class="one">
-	<span class="tt">Depth Plots</span>
-	{{ $chroms := index . "chroms" }}
-	{{ range $idx, $chrom := $chroms }}
-	<p>
-	<a href="{{ $prefix }}-indexcov-depth-{{ $chrom }}.html"><img src="{{ $prefix }}-indexcov-depth-{{ $chrom }}.png" /></a>
-	</p>
-	{{ end }}
-
-	</div>
-
-	<div class="two">
 	<span class="tt">Coverage Plots</span>
 
+	{{ $chroms := index . "chroms" }}
 	{{ range $idx, $chrom := $chroms }}
-	<p>
-	<a href="{{ $prefix }}-indexcov-roc-{{ $chrom }}.html"><img src="{{ $prefix }}-indexcov-roc-{{ $chrom }}.png" /></a>
-	</p>
+		<p>
+		<a href="{{ $prefix }}-indexcov-roc-{{ $chrom }}.html"><img src="{{ $prefix }}-indexcov-roc-{{ $chrom }}.png" /></a>
+		</p>
 	{{ end }}
 
 	</div>
+	<div class="two">
+	<span class="tt">Depth Plots</span>
+
+	{{ range $idx, $chrom := $chroms }}
+		<p>
+{{ if $notmany }}
+		<a href="{{ $prefix }}-indexcov-depth-{{ $chrom }}.html"><img src="{{ $prefix }}-indexcov-depth-{{ $chrom }}.png" /></a>
+{{ else }}
+		<img src="{{ $prefix }}-indexcov-depth-{{ $chrom }}.png" />
 {{ end }}
+
+		</p>
+	{{ end }}
+	</div>
+
 	<section>
     </body>
     <script>
