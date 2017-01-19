@@ -413,7 +413,8 @@ func run(refs []*sam.Reference, idxs []*Index, names []string, base string) (map
 				tmp := chartjs.XFloatFormat
 				chartjs.XFloatFormat = "%.2f"
 				c.Options.Legend = &chartjs.Legend{Display: types.False}
-				saveCharts(fmt.Sprintf("%s-roc-%s.html", base, chrom), "", c)
+				link := `<a href="index.html">back to index</a>`
+				saveCharts(fmt.Sprintf("%s-roc-%s.html", base, chrom), "", link, c)
 				chartjs.XFloatFormat = tmp
 				asPng(fmt.Sprintf("%s-roc-%s.png", base, chrom), c, 4, 3)
 			}
@@ -578,7 +579,7 @@ func GetCN(depths [][]float32) []float64 {
 	return meds
 }
 
-func saveCharts(path string, customjs string, charts ...chartjs.Chart) {
+func saveCharts(path string, customjs string, customHTML string, charts ...chartjs.Chart) {
 	if len(charts) == 0 {
 		return
 	}
@@ -587,7 +588,8 @@ func saveCharts(path string, customjs string, charts ...chartjs.Chart) {
 		panic(err)
 	}
 	defer wtr.Close()
-	if err := chartjs.SaveCharts(wtr, map[string]interface{}{"height": 550, "width": 650, "custom": template.JS(customjs)}, charts...); err != nil {
+	if err := chartjs.SaveCharts(wtr, map[string]interface{}{"height": 550, "width": 650, "custom": template.JS(customjs),
+		"customHTML": template.HTML(customHTML)}, charts...); err != nil {
 		panic(err)
 	}
 }

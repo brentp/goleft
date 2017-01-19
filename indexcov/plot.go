@@ -3,6 +3,7 @@ package indexcov
 import (
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"image/color"
 	"math"
 	"math/rand"
@@ -115,7 +116,8 @@ func plotDepths(depths [][]float32, samples []string, chrom string, base string,
 		if err != nil {
 			return err
 		}
-		if err := chart.SaveHTML(wtr, map[string]interface{}{"width": 850, "height": 550}); err != nil {
+		link := template.HTML(`<a href="index.html">back to index</a>`)
+		if err := chart.SaveHTML(wtr, map[string]interface{}{"width": 850, "height": 550, "customHTML": link}); err != nil {
 			return err
 		}
 		if err := wtr.Close(); err != nil {

@@ -104,7 +104,7 @@ Click the <span class="help">?</span> above each plot for help describing that t
 {{ $notmany := index . "notmany" }}
 
 	<div class="one">
-	<span class="tt">Coverage Plots</span>
+	<span class="tt">Coverage Plots</span> <a class="help" href="https://github.com/brentp/goleft/blob/master/docs/indexcov/help-depth.md#coverage" target="_blank">?</a>
 
 	{{ $chroms := index . "chroms" }}
 	{{ range $idx, $chrom := $chroms }}
@@ -118,13 +118,13 @@ Click the <span class="help">?</span> above each plot for help describing that t
 <ul>
 	<li>created with <a href="https://github.com/brentp/goleft">goleft indexcov (version {{ index . "version" }})</a> in <a href="https://golang.org">the go programming language</a></li>
 	<li>bam index parsing with <a href="https://github.com/biogo/hts">biogo/hts</a></li>
-	<li>interactive plots use: <a href="http://www.chartjs.org/">chartjs(2)</a> via <a href="https://github.com/brentp/go-chartjs">go-chartjs</a></li>
-	<li>static plots and PCA by<a href="https://github.com/gonum/plot">gonum/plot</a>and <a href="https://github.com/gonum/matrix">gonum/matrix</a></li>
+	<li>interactive plots use <a href="http://www.chartjs.org/">chartjs(2)</a> via <a href="https://github.com/brentp/go-chartjs">go-chartjs</a></li>
+	<li>static plots and PCA by <a href="https://github.com/gonum/plot">gonum/plot</a>and <a href="https://github.com/gonum/matrix">gonum/matrix</a></li>
 </ul>
 
 	</div>
 	<div class="two">
-	<span class="tt">Depth Plots</span>
+	<span class="tt">Depth Plots</span> <a class="help" href="https://github.com/brentp/goleft/blob/master/docs/indexcov/help-depth.md" target="_blank">?</a>
 
 	{{ range $idx, $chrom := $chroms }}
 		<p>
