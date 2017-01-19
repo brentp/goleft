@@ -267,19 +267,17 @@ func Main() {
 		names = append(names, getShortName(b))
 	}
 
-	charts, sexes, counts, pca8, chromNames := run(refs, idxs, names)
+	sexes, counts, pca8, chromNames := run(refs, idxs, names)
 
 	chartjs.XFloatFormat = "%.2f"
-	saveCharts(fmt.Sprintf("%s-indexcov-roc.html", cli.Prefix), "", charts...)
 	writeIndex(sexes, counts, cli.Sex, names, cli.Prefix, pca8, chromNames)
 }
 
 // if there are more samples than this then the depth plots won't be drawn.
 const maxSamples = 100
 
-func run(refs []*sam.Reference, idxs []*Index, names []string) ([]chartjs.Chart, map[string][]float64, []*counter, [][]uint8, []string) {
+func run(refs []*sam.Reference, idxs []*Index, names []string) (map[string][]float64, []*counter, [][]uint8, []string) {
 	// keep a slice of charts since we plot all of the coverage roc charts in a single html file.
-	charts := make([]chartjs.Chart, 0, len(refs))
 	sexes := make(map[string][]float64)
 	counts := make([][]int, len(idxs))
 	depths := make([][]float32, len(idxs))
@@ -364,25 +362,19 @@ func run(refs []*sam.Reference, idxs []*Index, names []string) ([]chartjs.Chart,
 			c := writeROCs(counts, names, chrom, cli.Prefix, rfh)
 			if cli.IncludeGL || !strings.HasPrefix(chrom, "GL") {
 				chromNames = append(chromNames, chrom)
-				if len(names) < maxSamples {
-					charts = append(charts, c)
-					if err := plotDepths(depths, names, chrom, cli.Prefix); err != nil {
-						panic(err)
-					}
-				} else {
-					tmp := chartjs.XFloatFormat
-					chartjs.XFloatFormat = "%.2f"
-					c.Options.Legend = &chartjs.Legend{Display: types.False}
-					saveCharts(fmt.Sprintf("%s-indexcov-%s-roc.html", cli.Prefix, chrom), "", c)
-					chartjs.XFloatFormat = tmp
+				if err := plotDepths(depths, names, chrom, cli.Prefix, len(names) < maxSamples); err != nil {
+					panic(err)
 				}
-			}
-			if len(charts) > 1 {
-				charts[len(charts)-1].Options.Legend = &chartjs.Legend{Display: types.False}
+				tmp := chartjs.XFloatFormat
+				chartjs.XFloatFormat = "%.2f"
+				c.Options.Legend = &chartjs.Legend{Display: types.False}
+				saveCharts(fmt.Sprintf("%s-indexcov-roc-%s.html", cli.Prefix, chrom), "", c)
+				chartjs.XFloatFormat = tmp
+				asPng(fmt.Sprintf("%s-indexcov-roc-%s.png", cli.Prefix, chrom), c, 4, 3)
 			}
 		}
 	}
-	return charts, sexes, offs, pca8, chromNames
+	return sexes, offs, pca8, chromNames
 }
 
 func pca(pca8 [][]uint8, samples []string) (*mat64.Dense, []chartjs.Chart, string) {

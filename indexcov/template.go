@@ -74,14 +74,22 @@ section {
 	<span class="tt">Depth Plots</span>
 	{{ $chroms := index . "chroms" }}
 	{{ range $idx, $chrom := $chroms }}
-	<p><a href="{{ $prefix }}-indexcov-depth-{{ $chrom }}.html">{{ $chrom }}</a></p>
+	<p>
+	<a href="{{ $prefix }}-indexcov-depth-{{ $chrom }}.html"><img src="{{ $prefix }}-indexcov-depth-{{ $chrom }}.png" /></a>
+	</p>
 	{{ end }}
 
 	</div>
 
 	<div class="two">
 	<span class="tt">Coverage Plots</span>
-	<p><a href="{{ $prefix }}-indexcov-roc.html">Coverage</a></p>
+
+	{{ range $idx, $chrom := $chroms }}
+	<p>
+	<a href="{{ $prefix }}-indexcov-roc-{{ $chrom }}.html"><img src="{{ $prefix }}-indexcov-roc-{{ $chrom }}.png" /></a>
+	</p>
+	{{ end }}
+
 	</div>
 {{ end }}
 	<section>

@@ -3,12 +3,16 @@ package indexcov
 import (
 	"encoding/json"
 	"fmt"
+	"image/color"
 	"math/rand"
 	"os"
 
 	chartjs "github.com/brentp/go-chartjs"
 	"github.com/brentp/go-chartjs/types"
 	"github.com/gonum/matrix/mat64"
+	"github.com/gonum/plot"
+	"github.com/gonum/plot/plotter"
+	"github.com/gonum/plot/vg"
 )
 
 type vs struct {
@@ -26,6 +30,28 @@ func (v *vs) Ys() []float64 {
 
 func (v *vs) Rs() []float64 {
 	return nil
+}
+
+func (v *vs) Len() int {
+	return len(v.xs)
+}
+
+// make it meet gonum/plot plotter.XYer
+
+func (v *vs) XY(i int) (x, y float64) {
+	return v.xs[i], v.ys[i]
+}
+
+func (v *vs) Sample(nth int) *vs {
+	o := &vs{xs: make([]float64, 0, 10+len(v.xs)/nth),
+		ys: make([]float64, 0, 10+len(v.xs)/nth)}
+	for i, x := range v.xs {
+		if i%nth == 0 {
+			o.xs = append(o.xs, x)
+			o.ys = append(o.ys, v.ys[i])
+		}
+	}
+	return o
 }
 
 // truncate depth values above this to cnMax
@@ -59,7 +85,7 @@ func randomColor(s int) *types.RGBA {
 		A: 240}
 }
 
-func plotDepths(depths [][]float32, samples []string, chrom string, prefix string) error {
+func plotDepths(depths [][]float32, samples []string, chrom string, prefix string, writeHTML bool) error {
 	chart := chartjs.Chart{Label: chrom}
 	xa, err := chart.AddXAxis(chartjs.Axis{Type: chartjs.Linear, Position: chartjs.Bottom, ScaleLabel: &chartjs.ScaleLabel{FontSize: 16, LabelString: "position on " + chrom, Display: chartjs.True}})
 	if err != nil {
@@ -83,15 +109,21 @@ func plotDepths(depths [][]float32, samples []string, chrom string, prefix strin
 	}
 	chart.Options.Responsive = chartjs.False
 	chart.Options.Tooltip = &chartjs.Tooltip{Mode: "nearest"}
-	wtr, err := os.Create(fmt.Sprintf("%s-indexcov-depth-%s.html", prefix, chrom))
-	if err != nil {
-		return err
+	if writeHTML {
+		wtr, err := os.Create(fmt.Sprintf("%s-indexcov-depth-%s.html", prefix, chrom))
+		if err != nil {
+			return err
+		}
+		if err := chart.SaveHTML(wtr, map[string]interface{}{"width": 850, "height": 550}); err != nil {
+			return err
+		}
+		if err := wtr.Close(); err != nil {
+			return err
+		}
 	}
-	if err := chart.SaveHTML(wtr, map[string]interface{}{"width": 850, "height": 550}); err != nil {
-		return err
-	}
-	return wtr.Close()
+	asPng(fmt.Sprintf("%s-indexcov-depth-%s.png", prefix, chrom), chart, 4, 3)
 
+	return nil
 }
 
 func plotBins(counts []*counter, samples []string) (chartjs.Chart, string) {
@@ -281,4 +313,37 @@ func plotSex(sexes map[string][]float64, chroms []string, samples []string) (*ch
 	chart.Options.Responsive = chartjs.False
 	chart.Options.Tooltip = &chartjs.Tooltip{Mode: "nearest"}
 	return &chart, jsfunc, nil
+}
+
+func asPng(path string, chart chartjs.Chart, wInches float64, hInches float64) {
+	p, err := plot.New()
+	if err != nil {
+		panic(err)
+	}
+	p.X.Label.Text = chart.Options.Scales.XAxes[0].ScaleLabel.LabelString
+	p.Y.Label.Text = chart.Options.Scales.YAxes[0].ScaleLabel.LabelString
+	for i := range chart.Data.Datasets {
+		ds := chart.Data.Datasets[len(chart.Data.Datasets)-i-1]
+		data := ds.Data
+		// gonum plotting is a significant portion of the runtime so we sample datasets.
+		if data.(*vs).Len() > 2000 {
+			data = data.(*vs).Sample(10)
+		} else if data.(*vs).Len() > 1000 {
+			data = data.(*vs).Sample(5)
+		}
+
+		l, err := plotter.NewLine(data.(*vs))
+		if err != nil {
+			panic(err)
+		}
+		c := color.RGBA(*ds.BorderColor)
+		c.A = 255
+		l.LineStyle.Width = vg.Points(0.8)
+
+		l.Color = c
+		p.Add(l)
+	}
+	if err := p.Save(vg.Length(wInches)*vg.Inch, vg.Length(hInches)*vg.Inch, path); err != nil {
+		panic(err)
+	}
 }

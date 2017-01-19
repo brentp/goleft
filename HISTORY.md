@@ -1,7 +1,9 @@
 v0.1.11 (development)
 =====================
 + `indexcov`: make plots a saner size.
-+ `indexdov`: output an index.html page that summarizes findings (in progress)
++ `indexdov`: output an index.html page that summarizes findings and links to other pages.
+              the index contains static pngs for coverage and depth that link to the interactive
+              HTML pages for each chromosome.
 
 
 v0.1.10
