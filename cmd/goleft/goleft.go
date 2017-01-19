@@ -7,13 +7,12 @@ import (
 	"sort"
 	"strconv"
 
+	"github.com/brentp/goleft"
 	"github.com/brentp/goleft/covmed"
 	"github.com/brentp/goleft/depth"
 	"github.com/brentp/goleft/depthwed"
 	"github.com/brentp/goleft/indexcov"
 )
-
-const Version = "0.1.11-dev"
 
 type progPair struct {
 	help string
@@ -31,7 +30,7 @@ func printProgs() {
 
 	var wtr io.Writer = os.Stdout
 
-	fmt.Fprintf(wtr, "goleft Version: %s\n\n", Version)
+	fmt.Fprintf(wtr, "goleft Version: %s\n\n", goleft.Version)
 	var keys []string
 	l := 5
 	for k := range progs {

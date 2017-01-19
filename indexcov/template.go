@@ -3,7 +3,8 @@ package indexcov
 const chartTemplate = `<!DOCTYPE html>
 <html>
     <head>
-	<title>{{ index . "name" }}:indexcov</title>
+{{ $name := index . "name" }}
+	<title>{{ $name }}:indexcov</title>
 		<script src="{{ index . "JQuery" }}"></script>
 		<script src="{{ index . "ChartJS" }}"></script>
 		<style type="text/css">
@@ -14,60 +15,93 @@ section {
     padding: 8px;
 }
 
+.help {
+	font-family: Lucida Console;
+	font-face: bold;
+	font-size: +2em;
+    padding: 2px;
+	border: 1px solid #aaa
+}
+
 
 .tt {
 	font-family: Lucida Console;
     border: 2px solid #aaa;
     padding: 2px;
+	height: auto;
 }
 
 .one {
     width: 48%;
     height: 380px;
     float: left;
+    padding: 2px;
 }
 .two {
     width: 48%;
     margin-left: 48%;
     height: 380px;
+    padding: 2px;
 }
 		</style>
 
     </head>
     <body>
+<span class="top-help">
+Welcome to the <a href="https://github.com/brentp/goleft/tree/master/indexcov">indexcov</a> summary page.<br/>
+Click the <span class="help">?</span> above each plot for help describing that type of plot.
+</span>
+
+
 	<section>
 	<div class="one">
-	<span class="tt">Inferred Sex</span>
+	<span class="tt">Inferred sex</span> <a class="help" href="https://github.com/brentp/goleft/blob/master/docs/indexcov/help-sex.md" target="_blank">?</a>
 	<canvas id="canvas-sex" style="height:380px;width:380px"></canvas>
 	</div>
 
 	<div class="two">
-	<span class="tt">Bin Counts</span>
+	<span class="tt">Bin Counts</span> <a class="help" href="https://github.com/brentp/goleft/blob/master/docs/indexcov/help-bin.md" target="_blank">?</a>
 	<canvas id="canvas-bin" style="height:380px;width:380px"></canvas>
 	</div>
 
 	</section>
 	<hr>
 
-	<section>
+<!-- links to download files; need to override height -->
+<section style="height:auto">
+	<div class="one" style="height:auto">
+	<span class="tt">Pedigree File</span>
+	<p>contains inferred sex, bins counts, and PCA values used to make the above plots</p>
+	<a href="{{ $name }}-indexcov.ped">{{ $name }}-indexcov.ped</a>
+	</div>
+
+	<div class="two" style="height:auto">
+	<span class="tt">Coverage BED File</span>
+	<p>contains scaled coverage for every sample (each column) for each 16,384 interval in the index</p>
+	<a href="{{ $name }}-indexcov.bed.gz">{{ $name }}-indexcov.bed.gz</a>
+	</div>
+
+</section><hr/>
 
 
-	<section>
+
+<section style="height:auto">
 	<div class="one">
 	<span class="tt">PCA: 1 vs 2</span>
+	<a class="help" href="https://github.com/brentp/goleft/blob/master/docs/indexcov/help-pca.md" target="_blank">?</a>
 	<canvas id="canvas-pca" style="height:380px;width:380px"></canvas>
 	</div>
 
 	<div class="two">
 	<span class="tt">PCA: 1 vs 3</span>
+	<a class="help" href="https://github.com/brentp/goleft/blob/master/docs/indexcov/help-pca.md" target="_blank">?</a>
 	<canvas id="canvas-pcb" style="height:380px;width:380px"></canvas>
 	</div>
 
-	</section>
+</section><hr/>
 
-	<section>
+<section style="height:auto">
 {{ $notmany := index . "notmany" }}
-{{ $name := index . "name" }}
 
 	<div class="one">
 	<span class="tt">Coverage Plots</span>
@@ -78,6 +112,15 @@ section {
 		<a href="{{ $name }}-indexcov-roc-{{ $chrom }}.html"><img src="{{ $name }}-indexcov-roc-{{ $chrom }}.png" /></a>
 		</p>
 	{{ end }}
+
+<hr/>
+<h5>Acknowledgements</h5>
+<ul>
+	<li>created with <a href="https://github.com/brentp/goleft">goleft indexcov (version {{ index . "version" }})</a> in <a href="https://golang.org">the go programming language</a></li>
+	<li>bam index parsing with <a href="https://github.com/biogo/hts">biogo/hts</a></li>
+	<li>interactive plots use: <a href="http://www.chartjs.org/">chartjs(2)</a> via <a href="https://github.com/brentp/go-chartjs">go-chartjs</a></li>
+	<li>static plots and PCA by<a href="https://github.com/gonum/plot">gonum/plot</a>and <a href="https://github.com/gonum/matrix">gonum/matrix</a></li>
+</ul>
 
 	</div>
 	<div class="two">
@@ -95,7 +138,7 @@ section {
 	{{ end }}
 	</div>
 
-	<section>
+
     </body>
     <script>
 	Chart.defaults.line.cubicInterpolationMode = 'monotone';
@@ -126,4 +169,5 @@ section {
 	{{ index . "pcbjs" }}
 
     </script>
-</html>`
+</html>
+`

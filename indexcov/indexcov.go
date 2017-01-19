@@ -19,6 +19,7 @@ import (
 	"github.com/biogo/hts/sam"
 	chartjs "github.com/brentp/go-chartjs"
 	"github.com/brentp/go-chartjs/types"
+	"github.com/brentp/goleft"
 	"github.com/gonum/floats"
 	"github.com/gonum/matrix/mat64"
 	"github.com/gonum/stat"
@@ -540,8 +541,9 @@ func writeIndex(sexes map[string][]float64, counts []*counter, keys []string, sa
 		"template": chartTemplate, "pca": pcaPlots[0],
 		"pcb": pcaPlots[1], "sex": *sexChart, "sexjs": template.JS(sexjs),
 		"bin": binChart, "binjs": template.JS(binjs),
-		"prefix": getBase(directory),
-		"name":   filepath.Base(directory), "chroms": chromNames}
+		"version": goleft.Version,
+		"prefix":  getBase(directory),
+		"name":    filepath.Base(directory), "chroms": chromNames}
 	chartMap["notmany"] = len(samples) <= maxSamples
 	if err := chartjs.SaveCharts(wtr, chartMap, chartjs.Chart{}); err != nil {
 		panic(err)
