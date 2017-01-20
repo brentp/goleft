@@ -22,6 +22,8 @@ Samples that have large values on the y-axis will be problematic for CNV and SV 
 For example:
 ![bin Help](https://cloud.githubusercontent.com/assets/1739/22121227/6ccb2ffa-de40-11e6-8916-eb7f3a584c35.png "bin help")
 
+In these plots **each point represents a sample**.
+
 In this plot, we see 2 samples that have very extreme values for both the x and y axis. These are samples
 that were missing coverage for entire sections of the genome due to processing glitches.
 

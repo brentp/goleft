@@ -19,5 +19,8 @@ and the *1st vs 3rd* principal components:
 
 ![pca2](https://cloud.githubusercontent.com/assets/1739/22120759/54d8aa5a-de3e-11e6-8b46-f0e6c1d94080.png "pca2")
 
+
+In these plots **each point represents a sample**.
+
 In this case, we don't see any major clusterings or outliers, but we may want to hover over the samples at the
 edges and check their sample Ids in the other `indexcov` plots.

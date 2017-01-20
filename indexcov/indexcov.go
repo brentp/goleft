@@ -405,7 +405,8 @@ func run(refs []*sam.Reference, idxs []*Index, names []string, base string) (map
 		}
 		if len(depths[longesti]) > 0 {
 			c := writeROCs(counts, names, chrom, rfh)
-			if cli.IncludeGL || !strings.HasPrefix(chrom, "GL") {
+			// only plot those with at least 3 regions.
+			if (cli.IncludeGL || !strings.HasPrefix(chrom, "GL")) && len(depths[longesti]) > 2 {
 				chromNames = append(chromNames, chrom)
 				if err := plotDepths(depths, names, chrom, base, len(names) < maxSamples); err != nil {
 					panic(err)
@@ -424,7 +425,6 @@ func run(refs []*sam.Reference, idxs []*Index, names []string, base string) (map
 }
 
 func pca(pca8 [][]uint8, samples []string) (*mat64.Dense, []chartjs.Chart, string) {
-	t := time.Now()
 	mat := mat64.NewDense(len(pca8), len(pca8[0]), nil)
 	row := make([]float64, len(pca8[0]))
 	for i := 0; i < len(pca8); i++ {
@@ -455,7 +455,6 @@ func pca(pca8 [][]uint8, samples []string) (*mat64.Dense, []chartjs.Chart, strin
 	proj.Mul(mat, pc.Vectors(nil).Slice(0, len(pca8[0]), 0, k))
 	pcaPlots, customjs := plotPCA(&proj, samples, vars)
 
-	log.Printf("indexcov: completed PCA in: %.3f seconds", time.Since(t).Seconds())
 	return &proj, pcaPlots, customjs
 }
 
