@@ -17,8 +17,8 @@ not 0.5 (which would indicate a heterozygous deletion). For this case, we know t
 
 We can see a corresponding drop in the coverage plot below.
 
-The depth plot in the `index.html` file is a static image. But clicking it will take the user to an interactive
-version of that plot for more in-depth (so to speak) exploration.
+The depth plot in the `index.html` file is a static image. But **clicking the image will take the user to an interactive
+HTML version of that plot** for more in-depth (so to speak) exploration.
 
 Coverage
 ========
@@ -38,5 +38,5 @@ sample that drops much sooner. This sample is also seen in the depth plot above.
 In general, changes as severe as this indicate a problem with the data rather than a biological effect such as a
 deletion. Though a very large (20MB+) deletion would show up in this type of plot.
 
-The coverage plot in the `index.html` file is a static image. But clicking it will take the user to an interactive
-version of that plot for more in-depth exploration.
+The coverage plot in the `index.html` file is a static image. But **clicking the image will take the user to an interactive
+HTML version of that plot** for more in-depth exploration.
