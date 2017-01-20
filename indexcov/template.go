@@ -48,7 +48,7 @@ section {
     </head>
     <body>
 <span class="top-help">
-Welcome to the <a href="https://github.com/brentp/goleft/tree/master/indexcov">indexcov</a> summary page.<br/>
+This the <a href="https://github.com/brentp/goleft/tree/master/indexcov">indexcov</a> summary page created with version {{ index . "version" }}.<br/>
 Click the <span class="help">?</span> above each plot for help describing that type of plot.
 </span>
 

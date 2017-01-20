@@ -1,5 +1,5 @@
-v0.1.11 (development)
-=====================
+v0.1.11
+=======
 + `indexcov`: make plots a saner size.
 + `indexcov`: output an index.html page that summarizes findings and links to other pages.
               the index contains static pngs for coverage and depth that link to the interactive
