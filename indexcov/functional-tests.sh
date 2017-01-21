@@ -14,6 +14,6 @@ check_nobams() {
 
 export -f check_nobams
 
-run check_no_bams ./goleft_test indexcov --prefix /tmp/tt
+run check_no_bams ./goleft_test indexcov -d /tmp/tt
 assert_exit_code 255
 assert_in_stderr "expected at least 1 bam"

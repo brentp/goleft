@@ -332,7 +332,7 @@ func run(refs []*sam.Reference, idxs []*Index, names []string, base string) (map
 	pca8 := make([][]uint8, len(idxs))
 	log.Printf("indexcov: running on %d indexes", len(idxs))
 	if len(idxs) > maxSamples {
-		log.Printf("indexcov: only plotting ROC, sex, PCA and bin plots (not depth) because # of samples %d is > %d\n", len(idxs), maxSamples)
+		log.Printf("indexcov: creating only static (no interactive) plots for depth because # of samples %d is > %d\n", len(idxs), maxSamples)
 	}
 
 	tmp, err := getWriter(base)

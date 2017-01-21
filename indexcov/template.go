@@ -105,6 +105,7 @@ Click the <span class="help">?</span> above each plot for help describing that t
 
 	<div class="one">
 	<span class="tt">Coverage Plots</span> <a class="help" href="https://github.com/brentp/goleft/blob/master/docs/indexcov/help-depth.md#coverage" target="_blank">?</a>
+	<p>Click each plot for an interactive view.</p>
 
 	{{ $chroms := index . "chroms" }}
 	{{ range $idx, $chrom := $chroms }}
@@ -125,6 +126,9 @@ Click the <span class="help">?</span> above each plot for help describing that t
 	</div>
 	<div class="two">
 	<span class="tt">Depth Plots</span> <a class="help" href="https://github.com/brentp/goleft/blob/master/docs/indexcov/help-depth.md" target="_blank">?</a>
+	<p>
+	{{ if $notmany }} Click each plot for an interactive view. {{ else }} . {{ end }}
+	</p>
 
 	{{ range $idx, $chrom := $chroms }}
 		<p>
