@@ -20,6 +20,7 @@ get() {
     if [[ ! -e $bam.bai ]]; then
         curl -sS https://s3.amazonaws.com/b4-test-data/$bam.bai > $bam.bai
     fi
+    set +e
 }
 
 
@@ -39,3 +40,7 @@ assert_in_stderr "not plotting"
 run check_sex ./goleft_test indexcov -d /tmp/tt --sex "X,Y" sample_name_0001.bam
 assert_exit_code 0
 
+get sample_biogo_e_0001.bam
+run check_issue17 ./goleft_test indexcov -d /tmp/tt sample_biogo_e_0001.bam
+assert_exit_code 1
+assert_in_stderr "no usable chromsomes in bam"
