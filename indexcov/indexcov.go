@@ -31,10 +31,11 @@ var Ploidy = 2
 var cli = &struct {
 	Directory string   `arg:"-d,required,help:directory for output files"`
 	IncludeGL bool     `arg:"-e,help:plot GL chromosomes like: GL000201.1 which are not plotted by default"`
-	Sex       []string `arg:"-X,help:name of the sex chromosome(s) used to infer sex; The first will be used to populate the sex column in a ped file."`
+	Sex       string   `arg:"-X,help:comma delimited names of the sex chromosome(s) used to infer sex; The first will be used to populate the sex column in a ped file."`
 	Chrom     string   `arg:"-c,help:optional chromosome to extract depth. default is entire genome."`
 	Bam       []string `arg:"positional,required,help:bam(s) for which to estimate coverage"`
-}{Sex: []string{"X", "Y"}}
+	sex       []string `arg:"-"`
+}{Sex: "X,Y"}
 
 // MaxCN is the maximum normalized value.
 var MaxCN = float32(6)
@@ -232,6 +233,7 @@ func Main() {
 	if len(cli.Bam) == 0 {
 		p.Fail(fmt.Sprintf("indexcov: expected at least 1 bam: %s", os.Args))
 	}
+	cli.sex = strings.Split(strings.TrimSpace(cli.Sex), ",")
 
 	if exists, err := getDirectory(cli.Directory); err != nil || !exists {
 		log.Fatalf("indexcov: error creating specified directory: %s, %s", cli.Directory, err)
@@ -285,7 +287,7 @@ func Main() {
 	sexes, counts, pca8, chromNames := run(refs, idxs, names, getBase(cli.Directory))
 
 	chartjs.XFloatFormat = "%.2f"
-	if indexPath := writeIndex(sexes, counts, cli.Sex, names, cli.Directory, pca8, chromNames); indexPath != "" {
+	if indexPath := writeIndex(sexes, counts, cli.sex, names, cli.Directory, pca8, chromNames); indexPath != "" {
 		fmt.Fprintf(os.Stderr, "indexcov finished: see %s for overview of output\n", indexPath)
 	}
 }
@@ -378,7 +380,7 @@ func run(refs []*sam.Reference, idxs []*Index, names []string, base string) (map
 		}
 
 		isSex := false
-		for _, x := range cli.Sex {
+		for _, x := range cli.sex {
 			if x == chrom {
 				isSex = true
 				if len(depths[longesti]) > 0 {
@@ -539,11 +541,14 @@ func writeIndex(sexes map[string][]float64, counts []*counter, keys []string, sa
 
 	chartMap := map[string]interface{}{"pcajs": template.JS(pcajs), "pcbjs": template.JS(pcajs),
 		"template": chartTemplate,
-		"sex":      *sexChart, "sexjs": template.JS(sexjs),
-		"bin": binChart, "binjs": template.JS(binjs),
-		"version": goleft.Version,
-		"prefix":  getBase(directory),
-		"name":    filepath.Base(directory), "chroms": chromNames}
+		"sex":      *sexChart,
+		"sexjs":    template.JS(sexjs),
+		"bin":      binChart,
+		"binjs":    template.JS(binjs),
+		"version":  goleft.Version,
+		"prefix":   getBase(directory),
+		"name":     filepath.Base(directory),
+		"chroms":   chromNames}
 	if len(pcaPlots) > 1 {
 		chartMap["pca"] = pcaPlots[0]
 		chartMap["pcb"] = pcaPlots[1]

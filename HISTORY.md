@@ -1,3 +1,8 @@
+v0.1.12 (development)
+=====================
++ `indexcov`: --sex is now specified as a comma-delimited string
++ `indexcov`: handle a single sample (see #16)
+
 v0.1.11
 =======
 + `indexcov`: make plots a saner size.
