@@ -2,23 +2,31 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
+	"strconv"
+	"time"
 
 	"github.com/biogo/hts/bam"
 	"github.com/biogo/hts/sam"
+	"github.com/brentp/xopen"
 )
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Println("\nUsage: anonymize-for-indexcov *.bam.\n\nThis will create files like sample_0001.bam through sample_$n.bam with read-groups and file names anonymized\n")
+	if len(os.Args) < 3 {
+		fmt.Println("\nUsage: anonymize-for-indexcov name *.bam.\n\nThis will create files like sample_0001.bam through sample_$name_$n.bam with read-groups and file names changed as well.\n")
 		os.Exit(1)
 	}
-	for i := 1; i < len(os.Args); i++ {
+	if xopen.Exists(os.Args[1]) {
+		log.Fatal("send (arbitrary) name as 1st argument. must not be an exisiting file.")
+	}
+	for i := 2; i < len(os.Args); i++ {
 		f, err := os.Open(os.Args[i])
 		if err != nil {
 			panic(err)
 		}
+		name := fmt.Sprintf("sample_%s_%04d", os.Args[1], i-1)
 
 		br, err := bam.NewReader(f, 1)
 		if err != nil {
@@ -35,12 +43,15 @@ func main() {
 		if len(rgs) == 0 {
 			fmt.Fprintf(os.Stderr, "no readgroups in %s\n", os.Args[i])
 		}
-		for _, rg := range rgs {
-			rg.Set(sam.Tag([2]byte{'S', 'M'}), "ACDSDF")
+		rg, err := sam.NewReadGroup(name, "", strconv.Itoa(i-1), "XX", "indexcov-anon", "illumina", "", name, "", "", time.Now(), 1000)
+		if err != nil {
+			panic(err)
 		}
-		hdr.AddReadGroup(rgs[0])
+		if err := hdr.AddReadGroup(rg); err != nil {
+			panic(err)
+		}
 
-		fo, err := os.Create(fmt.Sprintf("sample_%04d.bam", i))
+		fo, err := os.Create(fmt.Sprintf("%s.bam", name))
 		if err != nil {
 			panic(err)
 		}
@@ -63,9 +74,9 @@ func main() {
 		if bai == "" {
 			panic(fmt.Sprintf("unable to find bam index for %s", f.Name()))
 		}
-		if err := exec.Command("cp", "-f", bai, fmt.Sprintf("sample_%04d.bam.bai", i)).Run(); err != nil {
+		if err := exec.Command("cp", "-f", bai, fmt.Sprintf("%s.bam.bai", name)).Run(); err != nil {
 			panic(err)
 		}
-		fmt.Printf("wrote: sample_%04d.bam\n", i)
+		fmt.Printf("wrote: %s.bam\n", name)
 	}
 }

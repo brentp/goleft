@@ -69,7 +69,7 @@ func (x *Index) init() {
 		}
 	}
 	if len(sizes) < 1 {
-		log.Fatal("indexcov: no usable chromsomes in bam: %s", x.path)
+		log.Fatalf("indexcov: no usable chromsomes in bam: %s", x.path)
 	}
 
 	// we get the median as it's more stable than mean.
@@ -230,7 +230,7 @@ func Main() {
 	chartjs.XFloatFormat = "%.0f"
 	p := arg.MustParse(cli)
 	if len(cli.Bam) == 0 {
-		p.Fail("indexcov: expected at least 1 bam")
+		p.Fail(fmt.Sprintf("indexcov: expected at least 1 bam: %s", os.Args))
 	}
 
 	if exists, err := getDirectory(cli.Directory); err != nil || !exists {
@@ -538,12 +538,19 @@ func writeIndex(sexes map[string][]float64, counts []*counter, keys []string, sa
 	}
 
 	chartMap := map[string]interface{}{"pcajs": template.JS(pcajs), "pcbjs": template.JS(pcajs),
-		"template": chartTemplate, "pca": pcaPlots[0],
-		"pcb": pcaPlots[1], "sex": *sexChart, "sexjs": template.JS(sexjs),
+		"template": chartTemplate,
+		"sex":      *sexChart, "sexjs": template.JS(sexjs),
 		"bin": binChart, "binjs": template.JS(binjs),
 		"version": goleft.Version,
 		"prefix":  getBase(directory),
 		"name":    filepath.Base(directory), "chroms": chromNames}
+	if len(pcaPlots) > 1 {
+		chartMap["pca"] = pcaPlots[0]
+		chartMap["pcb"] = pcaPlots[1]
+		chartMap["hasPCA"] = true
+	} else {
+		chartMap["hasPCA"] = false
+	}
 	chartMap["notmany"] = len(samples) <= maxSamples
 	if err := chartjs.SaveCharts(wtr, chartMap, chartjs.Chart{}); err != nil {
 		panic(err)

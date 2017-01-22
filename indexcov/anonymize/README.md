@@ -6,8 +6,8 @@ The index is left unchanged and just copied to a new file with an unformative na
 usage is like:
 
 ```
-anonymize-for-indexcov *.bam
+anonymize-for-indexcov test1 *.bam
 ```
 
-this will create sample\_0001.bam, sample\_0001.bam.bai ... sample\_$n.bam, sample\_$n.bam.bai 
+this will create sample\_test1\_0001.bam, sample\_test1\_0001.bam.bai ... sample\_test1\_$n.bam, sample\_test1\_$n.bam.bai 
 which can be shared.

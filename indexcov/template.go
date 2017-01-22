@@ -84,6 +84,7 @@ Click the <span class="help">?</span> above each plot for help describing that t
 </section><hr/>
 
 
+{{ if index . "hasPCA" }}
 
 <section style="height:auto">
 	<div class="one">
@@ -99,6 +100,8 @@ Click the <span class="help">?</span> above each plot for help describing that t
 	</div>
 
 </section><hr/>
+
+{{ end }}
 
 <section style="height:auto">
 {{ $notmany := index . "notmany" }}
