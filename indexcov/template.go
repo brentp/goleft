@@ -4,6 +4,7 @@ const chartTemplate = `<!DOCTYPE html>
 <html>
     <head>
 {{ $name := index . "name" }}
+{{ $has_sex := index . "hasSex" }}
 	<title>{{ $name }}:indexcov</title>
 		<script src="{{ index . "JQuery" }}"></script>
 		<script src="{{ index . "ChartJS" }}"></script>
@@ -56,7 +57,11 @@ Click the <span class="help">?</span> above each plot for help describing that t
 	<section>
 	<div class="one">
 	<span class="tt">Inferred sex</span> <a class="help" href="https://github.com/brentp/goleft/blob/master/docs/indexcov/help-sex.md" target="_blank">?</a>
+	{{ if $has_sex }}
 	<canvas id="canvas-sex" style="height:380px;width:380px"></canvas>
+	{{ else }}
+	<p> Fewer than 2 sex chromosomes found; sex plot not shown.</p>
+	{{ end }}
 	</div>
 
 	<div class="two">
@@ -151,11 +156,16 @@ Click the <span class="help">?</span> above each plot for help describing that t
 	Chart.defaults.line.cubicInterpolationMode = 'monotone';
 	Chart.defaults.global.animation.duration = 0;
 
+    {{ $has_sex := index . "hasSex" }}
+
+{{ if $has_sex }}
     {{ $sex_json := index . "sex" }}
 	var sex_ctx = document.getElementById("canvas-sex").getContext("2d");
 	var sex_chart = new Chart(sex_ctx, {{ $sex_json }});
 	var chart = sex_chart
 	{{ index . "sexjs" }}
+{{ end }}
+
 
     {{ $bin_json := index . "bin" }}
 	var bin_ctx = document.getElementById("canvas-bin").getContext("2d");

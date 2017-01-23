@@ -323,6 +323,24 @@ func readIndex(r rdi) (*Index, string, int) {
 // if there are more samples than this then the depth plots won't be drawn.
 const maxSamples = 100
 
+func sameChrom(as []string, b string) bool {
+	for _, a := range as {
+		if a == b {
+			return true
+		}
+		na := a
+		if strings.HasPrefix(a, "chr") {
+			na = a[3:]
+		} else if strings.HasPrefix(b, "chr") {
+			na = "chr" + a
+		}
+		if na == b {
+			log.Printf(`indexcov: found chromosome "%s", wanted "%s" please use exact chromosome names for --sex.`, b, a)
+		}
+	}
+	return false
+}
+
 func run(refs []*sam.Reference, idxs []*Index, names []string, base string) (map[string][]float64, []*counter, [][]uint8, []string) {
 	// keep a slice of charts since we plot all of the coverage roc charts in a single html file.
 	sexes := make(map[string][]float64)
@@ -379,16 +397,12 @@ func run(refs []*sam.Reference, idxs []*Index, names []string, base string) (map
 			CountsAtDepth(depths[k], counts[k])
 		}
 
-		isSex := false
-		for _, x := range cli.sex {
-			if x == chrom {
-				isSex = true
-				if len(depths[longesti]) > 0 {
-					sexes[chrom] = GetCN(depths)
-				}
+		isSex := sameChrom(cli.sex, chrom)
+		if isSex {
+			if len(depths[longesti]) > 0 {
+				sexes[chrom] = GetCN(depths)
 			}
-		}
-		if !isSex {
+		} else {
 			// now add non-sex chromosomes to the pca data since we know the longest.
 			for k := range idxs {
 				var i int
@@ -423,7 +437,14 @@ func run(refs []*sam.Reference, idxs []*Index, names []string, base string) (map
 			}
 		}
 	}
+	checkSexes(sexes, cli.sex)
 	return sexes, offs, pca8, chromNames
+}
+
+func checkSexes(obs map[string][]float64, exp []string) {
+	if len(obs) < 2 {
+		log.Fatalf("indexcov: expected %d sex chromosomes, found: %d", len(exp), len(obs))
+	}
 }
 
 func pca(pca8 [][]uint8, samples []string) (*mat64.Dense, []chartjs.Chart, string) {
@@ -541,7 +562,8 @@ func writeIndex(sexes map[string][]float64, counts []*counter, keys []string, sa
 
 	chartMap := map[string]interface{}{"pcajs": template.JS(pcajs), "pcbjs": template.JS(pcajs),
 		"template": chartTemplate,
-		"sex":      *sexChart,
+		"sex":      sexChart,
+		"hasSex":   true,
 		"sexjs":    template.JS(sexjs),
 		"bin":      binChart,
 		"binjs":    template.JS(binjs),
@@ -555,6 +577,9 @@ func writeIndex(sexes map[string][]float64, counts []*counter, keys []string, sa
 		chartMap["hasPCA"] = true
 	} else {
 		chartMap["hasPCA"] = false
+	}
+	if sexChart == nil {
+		chartMap["hasSex"] = false
 	}
 	chartMap["notmany"] = len(samples) <= maxSamples
 	if err := chartjs.SaveCharts(wtr, chartMap, chartjs.Chart{}); err != nil {

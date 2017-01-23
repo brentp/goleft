@@ -25,7 +25,6 @@ get() {
 
 
 export -f check_nobams
-
 run check_no_bams ./goleft_test indexcov -d /tmp/tt
 assert_exit_code 255
 assert_in_stderr "expected at least 1 bam"
@@ -44,3 +43,8 @@ get sample_biogo_e_0001.bam
 run check_issue17 ./goleft_test indexcov -d /tmp/tt sample_biogo_e_0001.bam
 assert_exit_code 1
 assert_in_stderr "no usable chromsomes in bam"
+
+run check_sex_warning ./goleft_test indexcov --sex chrX,chrY -d /tmp/tt sample_name_0001.bam
+assert_exit_code 1
+assert_in_stderr "found chromosome \"X\", wanted \"chrX\""
+assert_in_stderr "found chromosome \"Y\", wanted \"chrY\""
