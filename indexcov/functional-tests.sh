@@ -48,3 +48,17 @@ run check_sex_warning ./goleft_test indexcov --sex chrX,chrY -d /tmp/tt sample_n
 assert_exit_code 1
 assert_in_stderr "found chromosome \"X\", wanted \"chrX\""
 assert_in_stderr "found chromosome \"Y\", wanted \"chrY\""
+
+mkdir -p samples/ && cd samples/
+if [[ ! -e sample_paper.tar.xz ]]; then
+    curl -Ss https://s3.amazonaws.com/b4-test-data/sample_paper.tar.xz > sample_paper.tar.xz
+fi
+if [[ ! -e sample_paper_0030.bam.bai ]]; then
+    tar xJf sample_paper.tar.xz
+fi
+cd ../
+
+run check_cohort ./goleft_test indexcov -d /tmp/tt samples/*.bam
+assert_exit_code 0
+
+rm samples/*.bam
