@@ -3,6 +3,8 @@ v0.1.12 (development)
 + `indexcov`: --sex is now specified as a comma-delimited string
 + `indexcov`: handle a single sample (see #16)
 + `indexcov`: functional tests.
++ `indexcov`: add "slope" output which indicates the slope of the coverage plot between ~0.85 and ~1.15.
+              this matches bins.out fairly well, but it is another metric to look at.
 
 v0.1.11
 =======

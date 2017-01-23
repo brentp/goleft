@@ -249,12 +249,9 @@ func Main() {
 		panic(err)
 	}
 
-	var refs []*sam.Reference
-
+	refs := brdr.Header().Refs()
 	if cli.Chrom != "" {
 		refs = append(refs, getRef(brdr, cli.Chrom))
-	} else {
-		refs = brdr.Header().Refs()
 	}
 	rdr.Close()
 	brdr.Close()
@@ -284,10 +281,10 @@ func Main() {
 	close(ch)
 	wg.Wait()
 
-	sexes, counts, pca8, chromNames := run(refs, idxs, names, getBase(cli.Directory))
+	sexes, counts, pca8, chromNames, slopes := run(refs, idxs, names, getBase(cli.Directory))
 
 	chartjs.XFloatFormat = "%.2f"
-	if indexPath := writeIndex(sexes, counts, cli.sex, names, cli.Directory, pca8, chromNames); indexPath != "" {
+	if indexPath := writeIndex(sexes, counts, cli.sex, names, cli.Directory, pca8, slopes, chromNames); indexPath != "" {
 		fmt.Fprintf(os.Stderr, "indexcov finished: see %s for overview of output\n", indexPath)
 	}
 }
@@ -341,11 +338,13 @@ func sameChrom(as []string, b string) bool {
 	return false
 }
 
-func run(refs []*sam.Reference, idxs []*Index, names []string, base string) (map[string][]float64, []*counter, [][]uint8, []string) {
+func run(refs []*sam.Reference, idxs []*Index, names []string, base string) (map[string][]float64, []*counter, [][]uint8, []string, []float32) {
 	// keep a slice of charts since we plot all of the coverage roc charts in a single html file.
 	sexes := make(map[string][]float64)
 	counts := make([][]int, len(idxs))
 	depths := make([][]float32, len(idxs))
+	// slope of coverage line between 1-delta and 1+delta.
+	slopes, nSlopes := make([]float32, len(idxs)), 0
 
 	offs := make([]*counter, len(idxs))
 	// uint8 to use less memory.
@@ -420,9 +419,13 @@ func run(refs []*sam.Reference, idxs []*Index, names []string, base string) (map
 			fmt.Fprintf(bgz, "%s\t%d\t%d\t%s\n", chrom, i*16384, (i+1)*16384, depthsFor(depths, i))
 		}
 		if len(depths[longesti]) > 0 {
-			c := writeROCs(counts, names, chrom, rfh)
+			c, rocs := writeROCs(counts, names, chrom, rfh)
 			// only plot those with at least 3 regions.
 			if (cli.IncludeGL || !strings.HasPrefix(chrom, "GL")) && len(depths[longesti]) > 2 {
+				if !isSex && longest > 100 {
+					updateSlopes(rocs, float32(ref.Len())/1e6, slopes)
+					nSlopes++
+				}
 				chromNames = append(chromNames, chrom)
 				if err := plotDepths(depths, names, chrom, base, len(names) < maxSamples); err != nil {
 					panic(err)
@@ -437,8 +440,27 @@ func run(refs []*sam.Reference, idxs []*Index, names []string, base string) (map
 			}
 		}
 	}
+	for i, s := range slopes {
+		slopes[i] = s / float32(nSlopes)
+	}
 	checkSexes(sexes, cli.sex)
-	return sexes, offs, pca8, chromNames
+	return sexes, offs, pca8, chromNames, slopes
+}
+
+// updateSlopes adjusts the slopes slice for each sample.
+// The value is the slope between 1+/-delta scaled by scalar
+// where scalar is likely chromosome length to weight chromosomes.
+func updateSlopes(rocs [][]float32, scalar float32, slopes []float32) {
+	//mid := slotsMid * slots
+	n := 0.1
+	ilo := int(0.5 + (slotsMid-n)*slots)
+	ihi := int(0.5 + (slotsMid+n)*slots)
+	// value around 1 is: (0.6666+/-0.15)/0.6666
+	for i := range slopes {
+		vals := rocs[i]
+		lo, hi := vals[ilo], vals[ihi]
+		slopes[i] += float32(lo-hi) * scalar
+	}
 }
 
 func checkSexes(obs map[string][]float64, exp []string) {
@@ -487,7 +509,7 @@ func getBase(directory string) string {
 }
 
 // write an index.html and a ped file. includes the PC projections and inferred sexes.
-func writeIndex(sexes map[string][]float64, counts []*counter, keys []string, samples []string, directory string, pca8 [][]uint8, chromNames []string) string {
+func writeIndex(sexes map[string][]float64, counts []*counter, keys []string, samples []string, directory string, pca8 [][]uint8, slopes []float32, chromNames []string) string {
 	if len(sexes) == 0 {
 		log.Println("sex chromosomes not found, not writing index")
 		return ""
@@ -511,7 +533,7 @@ func writeIndex(sexes map[string][]float64, counts []*counter, keys []string, sa
 	for i, k := range keys {
 		hdr[i] = "CN" + k
 	}
-	hdr = append(hdr, []string{"bins.out", "bins.lo", "bins.hi", "bins.in", "p.out"}...)
+	hdr = append(hdr, []string{"bins.out", "bins.lo", "bins.hi", "bins.in", "slope", "p.out"}...)
 	if pcs != nil {
 		hdr = append(hdr, "PC1\tPC2\tPC3\tPC4\tPC5")
 	}
@@ -532,6 +554,7 @@ func writeIndex(sexes map[string][]float64, counts []*counter, keys []string, sa
 			fmt.Sprintf("%d", cnt.low),
 			fmt.Sprintf("%d", cnt.hi),
 			fmt.Sprintf("%d", cnt.in),
+			fmt.Sprintf("%.3f", slopes[i]),
 			fmt.Sprintf("%.2f", float64(cnt.out)/float64(cnt.in)),
 		}...)
 		if pcs != nil {
@@ -640,7 +663,7 @@ func getROCs(counts [][]int) [][]float32 {
 
 }
 
-func writeROCs(counts [][]int, names []string, chrom string, fh io.Writer) chartjs.Chart {
+func writeROCs(counts [][]int, names []string, chrom string, fh io.Writer) (chartjs.Chart, [][]float32) {
 	rocs := getROCs(counts)
 	chart, err := plotROCs(rocs, names, chrom)
 	if err != nil {
@@ -657,7 +680,7 @@ func writeROCs(counts [][]int, names []string, chrom string, fh io.Writer) chart
 		}
 		fmt.Fprintf(fh, "%s\t%.2f\t%s\n", chrom, float64(i)/(slots*slotsMid), strings.Join(vals, "\t"))
 	}
-	return chart
+	return chart, rocs
 }
 
 func depthsFor(depths [][]float32, i int) string {
