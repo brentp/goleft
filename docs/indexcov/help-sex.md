@@ -1,7 +1,7 @@
 Inferred Sex
 ============
 
-Since we have scaled coverage to have a median of 1. Chromosomes with a value of ~0.5 have a single
+Since we have scaled coverage to have a median of 1, chromosomes with a value of ~0.5 have a single
 copy of that chromosome while those with a value of 1 have 2 copies (assuming diploid organism).
 
 Using that information, we can infer the copy-number state of the sex chromosomes and report.
