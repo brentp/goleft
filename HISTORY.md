@@ -1,5 +1,9 @@
-v0.1.12 (development)
+v0.1.13 (development)
 =====================
++ `covmed`: better coverage estimate by scaling by dup|qcfail|secondary.
+
+v0.1.12
+=======
 + `indexcov`: --sex is now specified as a comma-delimited string
 + `indexcov`: handle a single sample (see #16)
 + `indexcov`: functional tests.

@@ -3,7 +3,6 @@ package covmed
 import (
 	"fmt"
 	"io"
-	"log"
 	"math"
 	"os"
 	"sort"
@@ -17,9 +16,9 @@ import (
 )
 
 var cli = struct {
-	N       int    `arg:"-n,help:number of reads to sample for length"`
-	Bam     string `arg:"positional,required,help:bam for which to estimate coverage"`
-	Regions string `arg:"positional,help:optional bed file to specify target regions"`
+	N       int      `arg:"-n,help:number of reads to sample for length"`
+	Regions string   `arg:"-r,help:optional bed file to specify target regions"`
+	Bams    []string `arg:"positional,required,help:bam for which to estimate coverage"`
 }{N: 100000}
 
 func pcheck(e error) {
@@ -68,6 +67,8 @@ type Sizes struct {
 	TemplateSD       float64
 	ReadLengthMean   float64
 	ReadLengthMedian float64
+	// ProportionBad is the proportion of reads that were Dup|QCFail|Unmapped
+	ProportionBad float64
 }
 
 func (s Sizes) String() string {
@@ -76,21 +77,23 @@ func (s Sizes) String() string {
 
 // BamInsertSizes takes bam reader sample N well-behaved sites and return the coverage and insert-size info
 func BamInsertSizes(br *bam.Reader, n int) Sizes {
-	sizes := make([]int, 0, cli.N)
-	insertSizes := make([]int, 0, cli.N)
-	templateLengths := make([]int, 0, cli.N)
+	sizes := make([]int, 0, 2*n)
+	insertSizes := make([]int, 0, n)
+	templateLengths := make([]int, 0, n)
+	nBad := 0
 	for len(insertSizes) < n {
 		rec, err := br.Read()
 		if err == io.EOF {
 			break
 		}
 		pcheck(err)
-		if rec.Flags&(sam.Secondary|sam.Supplementary|sam.Unmapped|sam.QCFail) != 0 {
+		if rec.Flags&(sam.Duplicate|sam.QCFail|sam.Unmapped|sam.Secondary) != 0 {
+			nBad++
 			continue
 		}
-		if len(sizes) < n {
+		if len(sizes) < 2*n {
 			_, read := rec.Cigar.Lengths()
-			sizes = append(sizes, read)
+			sizes = append(sizes, read-1)
 		}
 
 		if rec.Pos < rec.MatePos && rec.Flags&sam.ProperPair == sam.ProperPair && len(rec.Cigar) == 1 && rec.Cigar[0].Type() == sam.CigarMatch {
@@ -103,55 +106,63 @@ func BamInsertSizes(br *bam.Reader, n int) Sizes {
 	sort.Ints(sizes)
 
 	s := Sizes{}
-	s.ReadLengthMedian = float64(sizes[(len(sizes)-1)/2]) - 1
-	s.ReadLengthMean, _ = meanStd(sizes)
+	if len(sizes) > 0 {
+		s.ProportionBad = float64(nBad) / float64(len(sizes))
+		s.ReadLengthMedian = float64(sizes[(len(sizes)-1)/2]) - 1
+		s.ReadLengthMean, _ = meanStd(sizes)
+	}
 
-	s.InsertMean, s.InsertSD = meanStd(insertSizes)
-	s.TemplateMean, s.TemplateSD = meanStd(templateLengths)
+	if len(insertSizes) > 0 {
+		s.InsertMean, s.InsertSD = meanStd(insertSizes)
+		s.TemplateMean, s.TemplateSD = meanStd(templateLengths)
+	}
 	return s
 }
 
 // Main is called from the dispatcher
 func Main() {
+	fmt.Fprintln(os.Stdout, "coverage\tinsert_mean\tinsert_sd\ttemplate_mean\ttemplate_sd\tbam")
 
 	arg.MustParse(&cli)
-	log.Println(cli.Bam)
+	for _, bamPath := range cli.Bams {
 
-	fh, err := os.Open(cli.Bam)
-	pcheck(err)
+		fh, err := os.Open(bamPath)
+		pcheck(err)
 
-	brdr, err := bam.NewReader(fh, 2)
-	pcheck(err)
+		brdr, err := bam.NewReader(fh, 2)
+		pcheck(err)
 
-	ifh, ierr := os.Open(cli.Bam + ".bai")
-	if ierr != nil {
-		// if .bam.bai didn't exist, check .bai
-		ifh, err = os.Open(cli.Bam[:len(cli.Bam)-4] + ".bai")
-	}
-	pcheck(err)
-
-	idx, err := bam.ReadIndex(ifh)
-	pcheck(err)
-
-	genomeBases := 0
-	mapped := uint64(0)
-	for _, ref := range brdr.Header().Refs() {
-		stats, ok := idx.ReferenceStats(ref.ID())
-		if !ok {
-			fmt.Fprintf(os.Stderr, "chromosome: %s not found in %s\n", ref.Name(), cli.Bam)
-			continue
+		ifh, ierr := os.Open(bamPath + ".bai")
+		if ierr != nil {
+			// if .bam.bai didn't exist, check .bai
+			ifh, err = os.Open(bamPath[:len(bamPath)-4] + ".bai")
 		}
-		genomeBases += ref.Len()
-		mapped += stats.Mapped
+		pcheck(err)
 
+		idx, err := bam.ReadIndex(ifh)
+		pcheck(err)
+
+		genomeBases := 0
+		mapped := uint64(0)
+		for _, ref := range brdr.Header().Refs() {
+			genomeBases += ref.Len()
+			stats, ok := idx.ReferenceStats(ref.ID())
+			if !ok {
+				if !strings.Contains(ref.Name(), "random") && ref.Len() > 10000 {
+					fmt.Fprintf(os.Stderr, "chromosome: %s not found in %s\n", ref.Name(), bamPath)
+				}
+				continue
+			}
+			mapped += stats.Mapped
+		}
+		if cli.Regions != "" {
+			genomeBases = readCoverage(cli.Regions)
+		}
+
+		// TODO: check that reads are from coverage regions.
+		sizes := BamInsertSizes(brdr, cli.N)
+		coverage := (1 - sizes.ProportionBad) * float64(mapped) * sizes.ReadLengthMean / float64(genomeBases)
+
+		fmt.Fprintf(os.Stdout, "%.2f\t%s\t%s\n", coverage, sizes.String(), bamPath)
 	}
-	if cli.Regions != "" {
-		genomeBases = readCoverage(cli.Regions)
-	}
-
-	// TODO: check that reads are from coverage regions.
-	sizes := BamInsertSizes(brdr, cli.N)
-	coverage := float64(mapped) * sizes.ReadLengthMedian / float64(genomeBases)
-
-	fmt.Fprintf(os.Stdout, "%.2f\t%s\n", coverage, sizes.String())
 }
