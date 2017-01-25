@@ -61,8 +61,12 @@ func meanStd(arr []int) (mean, std float64) {
 
 // Sizes hold info about a bam returned from BamInsertSizes
 type Sizes struct {
-	InsertMean       float64
-	InsertSD         float64
+	InsertMean float64
+	InsertSD   float64
+	// 5th percentile of insert size
+	InsertPct5 int
+	// 95th percentile of insert size
+	InsertPct95      int
 	TemplateMean     float64
 	TemplateSD       float64
 	ReadLengthMean   float64
@@ -72,7 +76,7 @@ type Sizes struct {
 }
 
 func (s Sizes) String() string {
-	return fmt.Sprintf("%.2f\t%.2f\t%.2f\t%.2f", s.InsertMean, s.InsertSD, s.TemplateMean, s.TemplateSD)
+	return fmt.Sprintf("%.2f\t%.2f\t%d\t%d\t%.2f\t%.2f", s.InsertMean, s.InsertSD, s.InsertPct5, s.InsertPct95, s.TemplateMean, s.TemplateSD)
 }
 
 // BamInsertSizes takes bam reader sample N well-behaved sites and return the coverage and insert-size info
@@ -115,13 +119,18 @@ func BamInsertSizes(br *bam.Reader, n int) Sizes {
 	if len(insertSizes) > 0 {
 		s.InsertMean, s.InsertSD = meanStd(insertSizes)
 		s.TemplateMean, s.TemplateSD = meanStd(templateLengths)
+		sort.Ints(insertSizes)
+		l := float64(len(insertSizes) - 1)
+		s.InsertPct5 = insertSizes[int(0.05*l+0.5)]
+		s.InsertPct95 = insertSizes[int(0.95*l+0.5)]
+
 	}
 	return s
 }
 
 // Main is called from the dispatcher
 func Main() {
-	fmt.Fprintln(os.Stdout, "coverage\tinsert_mean\tinsert_sd\ttemplate_mean\ttemplate_sd\tbam")
+	fmt.Fprintln(os.Stdout, "coverage\tinsert_mean\tinsert_sd\tinsert_5th\tinsert_95th\ttemplate_mean\ttemplate_sd\tbam")
 
 	arg.MustParse(&cli)
 	for _, bamPath := range cli.Bams {

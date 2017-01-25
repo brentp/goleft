@@ -1,6 +1,7 @@
 v0.1.13 (development)
 =====================
 + `covmed`: better coverage estimate by scaling by dup|qcfail|secondary.
++ `covmed`: report 5th and 95th percentile of insert size.
 
 v0.1.12
 =======
