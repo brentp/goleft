@@ -3,6 +3,7 @@ v0.1.13 (development)
 + `covmed`: better coverage estimate by scaling by dup|qcfail|secondary.
 + `covmed`: report 5th and 95th percentile of insert size.
 + `indexcov`: make index.html even when no sex chromosomes are present.
++ `depth:` quote reference and chromosome name.
 
 v0.1.12
 =======

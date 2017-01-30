@@ -115,4 +115,8 @@ assert_equal "$(check_uniq x.depth.bed bed)" "OK"
 assert_equal "$(check_uniq x.callable.bed bed)" "OK"
 
 
+run check_hla ./goleft depth -r test/fake.fa --prefix /tmp/xx test/hla.bam
+assert_exit_code 0
+
 echo -e "\nFINISHED OK"
+

@@ -42,7 +42,7 @@ type dargs struct {
 
 // we echo the region first so the callback knows the full extents even if there is NOTE
 // coverage for part of it.
-const command = "echo %s; samtools depth -Q %d -d %d -r %s %s"
+const command = "echo '%s'; samtools depth -Q %d -d %d -r '%s' '%s'"
 
 // this is the size in basepairs of the genomic chunks for parallelization.
 var step = 10000000
