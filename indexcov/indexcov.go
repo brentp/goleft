@@ -61,7 +61,7 @@ func (x *Index) init() {
 
 	// sizes is used to get the median.
 	sizes := make([]int64, 0, 16384)
-	for k := 0; k < len(x.refs)-1; k++ {
+	for k := 0; k < len(x.refs); k++ {
 		if len(x.refs[k]) < 2 {
 			continue
 		}
@@ -233,7 +233,10 @@ func Main() {
 	if len(cli.Bam) == 0 {
 		p.Fail(fmt.Sprintf("indexcov: expected at least 1 bam: %s", os.Args))
 	}
-	cli.sex = strings.Split(strings.TrimSpace(cli.Sex), ",")
+	log.Println(cli.Sex)
+	if len(cli.Sex) > 0 {
+		cli.sex = strings.Split(strings.TrimSpace(cli.Sex), ",")
+	}
 
 	if exists, err := getDirectory(cli.Directory); err != nil || !exists {
 		log.Fatalf("indexcov: error creating specified directory: %s, %s", cli.Directory, err)
@@ -464,7 +467,7 @@ func updateSlopes(rocs [][]float32, scalar float32, slopes []float32) {
 }
 
 func checkSexes(obs map[string][]float64, exp []string) {
-	if len(obs) < 2 {
+	if len(obs) != len(exp) {
 		log.Fatalf("indexcov: expected %d sex chromosomes, found: %d", len(exp), len(obs))
 	}
 }
@@ -511,19 +514,19 @@ func getBase(directory string) string {
 // write an index.html and a ped file. includes the PC projections and inferred sexes.
 func writeIndex(sexes map[string][]float64, counts []*counter, keys []string, samples []string, directory string, pca8 [][]uint8, slopes []float32, chromNames []string) string {
 	if len(sexes) == 0 {
-		log.Println("sex chromosomes not found, not writing index")
-		return ""
-	}
-	for _, k := range keys {
-		if _, ok := sexes[k]; !ok {
-			fmt.Printf("chromosome %s not found. not writing ped\n", k)
-			os.Exit(1)
+		log.Println("sex chromosomes not found.")
+	} else {
+		for _, k := range keys {
+			if _, ok := sexes[k]; !ok {
+				fmt.Printf("chromosome %s not found. not writing ped\n", k)
+				os.Exit(1)
+			}
 		}
 	}
 	pcs, pcaPlots, pcajs := pca(pca8, samples)
 	binChart, binjs := plotBins(counts, samples)
 
-	sexes["_inferred"] = make([]float64, len(sexes[keys[0]]))
+	sexes["_inferred"] = make([]float64, len(samples))
 	f, err := os.Create(fmt.Sprintf("%s.ped", getBase(directory)))
 	if err != nil {
 		panic(err)
@@ -540,8 +543,13 @@ func writeIndex(sexes map[string][]float64, counts []*counter, keys []string, sa
 
 	fmt.Fprintf(f, "#family_id\tsample_id\tpaternal_id\tmaternal_id\tsex\tphenotype\t%s\n", strings.Join(hdr, "\t"))
 	tmpl := "unknown\t%s\t-9\t-9\t%d\t-9\t"
+	var inferred int
 	for i, s := range samples {
-		inferred := int(0.5 + sexes[keys[0]][i])
+		if len(sexes) > 1 { // 1 key for _inferred
+			inferred = int(0.5 + sexes[keys[0]][i])
+		} else {
+			inferred = -9
+		}
 		fmt.Fprintf(f, tmpl, s, inferred)
 		sexes["_inferred"][i] = float64(inferred)
 		s := make([]string, 0, len(keys)+4)

@@ -61,4 +61,9 @@ cd ../
 run check_cohort ./goleft_test indexcov -d /tmp/tt samples/*.bam
 assert_exit_code 0
 
+
+rm -r /tmp/tt
+run check_no_sex ./goleft_test indexcov --sex "" -d /tmp/tt samples/*.bam
+assert_in_stderr "index.html for overview"
+
 rm samples/*.bam
