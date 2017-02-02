@@ -15,6 +15,8 @@ import (
 	"github.com/brentp/faidx"
 	"github.com/brentp/goleft/emdepth"
 	"github.com/brentp/xopen"
+	"github.com/gonum/matrix"
+	"github.com/gonum/matrix/mat64"
 	"go4.org/sort"
 )
 
@@ -105,7 +107,7 @@ func intervalFromLine(l string, fa *faidx.Faidx) *Interval {
 	}
 	for c := 3; c < len(toks); c++ {
 		d := mustAtof(toks[c])
-		d /= float32(iv.End - iv.Start)
+		//d /= float32(iv.End - iv.Start)
 		iv.Depths = append(iv.Depths, d)
 		iv.AdjustedDepths = append(iv.AdjustedDepths, d)
 	}
@@ -121,15 +123,21 @@ func intervalFromLine(l string, fa *faidx.Faidx) *Interval {
 func (ivs *Intervals) SampleMedians() []float32 {
 	if len(ivs.sampleMedians) == 0 {
 		regions := ivs.Intervals
-		depths := make([]float32, len(regions))
+		depths := make([]float32, 0, len(regions))
+
 		ivs.sampleMedians = make([]float32, ivs.NSamples())
 		for sampleI := 0; sampleI < ivs.NSamples(); sampleI++ {
 			// sorting the extracted array is much faster.
-			for di, d := range regions {
-				depths[di] = d.Depths[sampleI]
+			depths = depths[:0]
+			for _, d := range regions {
+				if d.Depths[sampleI] > 0 {
+					depths = append(depths, d.Depths[sampleI])
+				}
 			}
+			// lop off the lower depths (for exome).
+			// and then normalized on the median above that lower bound.
 			sort.Slice(depths, func(i, j int) bool { return depths[i] < depths[j] })
-			ivs.sampleMedians[sampleI] = depths[len(depths)/2]
+			ivs.sampleMedians[sampleI] = depths[int(0.65*float64(len(depths)))]
 		}
 		med := median(ivs.sampleMedians)
 		ivs.sampleScalars = make([]float32, 0, len(ivs.sampleMedians))
@@ -327,6 +335,82 @@ func (ivs *Intervals) SortByPosition() {
 	sort.Slice(ivs.Intervals, func(i, j int) bool { return ivs.Intervals[i].Start < ivs.Intervals[j].Start })
 }
 
+func svdmean(vs []float32) float64 {
+	s := float64(0)
+	for _, v := range vs {
+		s += float64(v)
+	}
+	return s / float64(len(vs))
+}
+
+func svdsd(vs []float32, mean float64) float64 {
+	sd := float64(0)
+	for _, v := range vs {
+		sd += math.Pow(float64(v)-mean, 2)
+	}
+	return math.Sqrt(sd / float64(len(vs)-1))
+}
+
+func (ivs *Intervals) SVD(n int) {
+	a := mat64.NewDense(len(ivs.Intervals), len(ivs.Samples), nil)
+	sl := make([]float64, len(ivs.Samples))
+	means := make([]float64, len(ivs.Intervals))
+	sds := make([]float64, len(ivs.Intervals))
+	// convert to z-score
+	for i, iv := range ivs.Intervals {
+		m := svdmean(iv.Depths)
+		sd := svdsd(iv.Depths, m)
+		for k, v := range iv.Depths {
+			sl[k] = (float64(v) - m) / sd
+		}
+		a.SetRow(i, sl)
+		means[i] = m
+		sds[i] = sd
+	}
+	var svd mat64.SVD
+	if ok := svd.Factorize(a, matrix.SVDThin); !ok {
+		panic("error with SVD")
+	}
+
+	// get svd and zero out first n components.
+	s, u, v := extractSVD(&svd)
+	log.Println("s:", len(s))
+	for i := 0; i < n; i++ {
+		s[i] = 0
+	}
+	sigma := mat64.NewDense(len(s), len(s), nil)
+	for i := 0; i < len(s); i++ {
+		sigma.Set(i, i, s[i])
+	}
+
+	var ans mat64.Dense
+	ans.Product(u, sigma, v)
+
+	// convert back from z-score to depth
+	for i, iv := range ivs.Intervals {
+		row := ans.RawRowView(i)
+		for k, v := range row {
+			iv.AdjustedDepths[k] = max32(0, float32(v*sds[i]+means[i]))
+		}
+	}
+
+}
+
+func max32(a, b float32) float32 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func extractSVD(svd *mat64.SVD) (s []float64, u, v *mat64.Dense) {
+	var um, vm mat64.Dense
+	um.UFromSVD(svd)
+	vm.VFromSVD(svd)
+	s = svd.Values(nil)
+	return s, &um, &vm
+}
+
 func (ivs *Intervals) ReadRegions(path string, fasta string) {
 	fai, err := faidx.New(fasta)
 	if err != nil {
@@ -404,11 +488,26 @@ func main() {
 	ivs := &Intervals{}
 	ivs.ReadRegions(bed, fasta)
 	fmt.Fprintln(os.Stderr, ivs.Samples)
-	fmt.Fprintln(os.Stderr, ivs.SampleScalars())
+	//fmt.Fprintln(os.Stderr, "scalars:", ivs.SampleScalars())
+	_ = window
 
-	ivs.CorrectBySampleMedian()
-	ivs.CorrectByGC(window)
+	/*
+		ivs.CorrectBySampleMedian()
+		_ = window
+		//ivs.CorrectByGC(window)
+		ivs.SortByPosition()
+	*/
+	ivs.SVD(8)
 
-	ivs.CallCopyNumbers()
-
+	nsites := len(ivs.Intervals)
+	dps := make([]string, len(ivs.Samples))
+	fmt.Printf("#chrom\tstart\tend\t%s\n", strings.Join(ivs.Samples, "\t"))
+	for i := 0; i < nsites; i++ {
+		iv := ivs.Intervals[i]
+		for si := range dps {
+			dps[si] = fmt.Sprintf("%.2f", iv.AdjustedDepths[si])
+		}
+		fmt.Printf("%s\t%d\t%d\t%s\n", ivs.Chrom, iv.Start, iv.End, strings.Join(dps, "\t"))
+	}
+	//ivs.CallCopyNumbers()
 }
