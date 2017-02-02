@@ -59,11 +59,7 @@ type Intervals struct {
 	Intervals     []*Interval
 	sampleMedians []float32
 	sampleScalars []float32
-	samples       []string
-}
-
-func (ivs Intervals) Samples() []string {
-	return ivs.samples
+	Samples       []string
 }
 
 func (ivs Intervals) NSamples() int {
@@ -264,7 +260,7 @@ func pLess(Depths []float32, val float32) float32 {
 // CallCopyNumbers returns Intervals for which any sample has non-zero copy-number
 func (ivs *Intervals) CallCopyNumbers() {
 	ivs.SortByPosition()
-	samples := ivs.Samples()
+	samples := ivs.Samples
 
 	cache := &emdepth.Cache{}
 	nskip := 0
@@ -309,7 +305,7 @@ func (ivs *Intervals) printCNVs(cnvs []*emdepth.CNV, samples []string) {
 	sort.Slice(cnvs, func(i, j int) bool { return cnvs[i].Position[0].Start < cnvs[j].Position[0].Start })
 	for _, cnv := range cnvs {
 		l := len(cnv.Position) - 1
-		if cnv.Position[0].End-cnv.Position[l].Start <= 600 {
+		if cnv.Position[0].End-cnv.Position[l].Start < 500 {
 			continue
 		}
 		sample := samples[cnv.SampleI]
@@ -351,7 +347,7 @@ func (ivs *Intervals) ReadRegions(path string, fasta string) {
 			panic(err)
 		}
 		if i == 0 && (line[0] == '#' || strings.HasPrefix(line, "chrom")) {
-			ivs.samples = strings.Split(strings.TrimSpace(line), "\t")[3:]
+			ivs.Samples = strings.Split(strings.TrimSpace(line), "\t")[3:]
 			continue
 		}
 		if i == 0 || i == 1 {
@@ -402,37 +398,17 @@ func main() {
 		defer pprof.StopCPUProfile()
 	*/
 
-	window := 15
+	window := 23
 	bed := os.Args[1]
 	fasta := os.Args[2]
 	ivs := &Intervals{}
 	ivs.ReadRegions(bed, fasta)
-	fmt.Fprintln(os.Stderr, ivs.Samples())
+	fmt.Fprintln(os.Stderr, ivs.Samples)
 	fmt.Fprintln(os.Stderr, ivs.SampleScalars())
 
 	ivs.CorrectBySampleMedian()
-	//ivs.Write(10)
 	ivs.CorrectByGC(window)
-	//fmt.Println("\n\n")
-	//ivs.Write(10)
 
-	/*
-		m := make([]string, len(ivs.Samples()))
-		for _, r := range ivs.Intervals {
-			for i, d := range r.Depths {
-				m[i] = fmt.Sprintf("%.1f\t%.1f", d, r.AdjustedDepths[i])
-			}
-			fmt.Printf("%s\t%d\t%d\t%s\n", ivs.Chrom, r.Start, r.End, strings.Join(m, "\t"))
-		}
-		os.Exit(0)
-	*/
-
-	// this correct by median of all samples.
-	//fmt.Println("\n")
-	//ivs.Write(10)
-	//os.Exit(1)
-
-	log.Println("writing")
 	ivs.CallCopyNumbers()
 
 }

@@ -190,8 +190,8 @@ func EMDepth(depths []float32, p Position) *EMD {
 		}
 		// make CN 2 more likely by expanding the range between CN1 and CN3.
 		span := lambda[2] - lambda[1]
-		lambda[1] -= (span / 3)
-		lambda[3] += (span / 3)
+		lambda[1] -= (span / 2.5)
+		lambda[3] += (span / 2.5)
 		sumd, maxd = summaxdiff(lambda, lastCenters)
 	}
 	binPool.Put(binned)
@@ -213,8 +213,8 @@ type EMD struct {
 // 3)a float indicating the proportion of samples that in the same copy-number
 // state in both.
 
-const lower = -0.90
-const upper = 0.50
+const lower = -0.80
+const upper = 0.40
 
 func (e *EMD) Same(o *EMD) (non2 []int, changed []int, pct float64) {
 	ofc := o.Log2FC()
@@ -284,7 +284,7 @@ func (e *EMD) adjustCN(cn int, depth float64) int {
 	if cn == 1 || cn == 3 {
 		dk := int(0.5 + depth)
 		o, o2 := pmf(dk, e.Lambda[cn]), pmf(dk, e.Lambda[2])
-		if o*0.95 < o2 {
+		if o*0.9 < o2 {
 			cn = 2
 		}
 	}
@@ -297,7 +297,7 @@ func (e *EMD) adjustCN(cn int, depth float64) int {
 // Each time an EMD is added, a slice of Regions that have ended is returned.
 type Cache struct {
 	last *EMD
-	// for each sample (key), where is it non-CN2?
+	// for each sample (key by sample index), where is it non-CN2?
 	cnvs map[int][]*EMD
 }
 
