@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 
 	arg "github.com/alexflint/go-arg"
+	"github.com/biogo/hts/bam"
 	"github.com/brentp/goleft/indexcov"
 )
 
@@ -17,46 +20,114 @@ type dargs struct {
 	Chrom      string   `arg:"required,-c,help:optional chromosome to limit analysis"`
 	MinCov     int      `arg:"help:minimum depth considered callable"`
 	MaxCov     int      `arg:"help:maximum depth considered callable"`
+	MaxSkip    int      `arg:"-k,help:skip this many uncovered bases before forcing a new block"`
+	MinSize    int      `arg:"-m,help:only report blocks of at least this length"`
+	Processes  int      `arg:"-p,help:number of processors to use"`
 	MinSamples float64  `arg:"help:proportion of samples with mincov coverage for a region to be reported"`
 	Bams       []string `arg:"positional,required,help:bams for which to calculate depth"`
 	minSamples int      `arg:"-"`
 }
 
+func chromSize(path string, chrom string) int {
+	f, err := os.Open(path)
+	if err != nil {
+		panic(err)
+	}
+	b, err := bam.NewReader(f, 1)
+	if err != nil {
+		panic(err)
+	}
+	for _, ref := range b.Header().Refs() {
+		if ref.Name() == chrom {
+			return ref.Len()
+		}
+	}
+	panic(fmt.Sprintf("multidepth: chromosome %s not found in %s", chrom, path))
+}
+
 func main() {
-	args := dargs{Q: 10, MinCov: 7, MaxCov: 1000, MinSamples: 0.5}
+	args := dargs{Q: 10, MinCov: 7, MaxCov: 1000, MinSamples: 0.5, MinSize: 15, MaxSkip: 10}
 	if p := arg.MustParse(&args); len(args.Bams) == 0 {
 		p.Fail("specify > 1 bam")
 	}
+	if args.Processes <= 0 {
+		args.Processes = runtime.NumCPU()
+	}
+	runtime.GOMAXPROCS(args.Processes)
 	hdr := make([]string, 1, len(args.Bams)+1)
 	hdr[0] = "#chrom\tstart\tend"
 
 	args.minSamples = int(0.5 + args.MinSamples*float64(len(args.Bams)))
-	bams := make([]string, len(args.Bams))
-	for i, b := range args.Bams {
-		bams[i] = b
+	for _, b := range args.Bams {
 		nm, err := indexcov.GetShortName(b)
 		if err != nil {
 			panic(err)
 		}
 		hdr = append(hdr, nm)
 	}
-	cargs := append([]string{"depth", "-Q", strconv.Itoa(args.Q), "-d", strconv.Itoa(args.MaxCov), "-r", args.Chrom}, bams...)
-	cmd := exec.Command("samtools", cargs...)
-	cmd.Stderr = os.Stderr
-	pipeout, err := cmd.StdoutPipe()
-	if err != nil {
-		panic(err)
-	}
+	ch := genRegions(chromSize(args.Bams[0], args.Chrom), args.Chrom)
+	out := make(chan []block, 1)
 
-	if err := cmd.Start(); err != nil {
-		panic(err)
+	wg := &sync.WaitGroup{}
+	wg.Add(args.Processes)
+	for i := 0; i < args.Processes; i++ {
+		go func() {
+			for reg := range ch {
+				aggregate(&args, reg, out)
+			}
+			wg.Done()
+		}()
 	}
 
 	fmt.Println(strings.Join(hdr, "\t"))
-	aggregate(bufio.NewReader(pipeout), &args, args.Chrom)
-	if err := cmd.Wait(); err != nil {
-		panic(err)
-	}
+	pwg := writeOut(out)
+
+	wg.Wait()
+	close(out)
+	pwg.Wait()
+}
+
+func writeOut(ch chan []block) *sync.WaitGroup {
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		stdout := bufio.NewWriter(os.Stdout)
+		for blocks := range ch {
+			for _, bl := range blocks {
+				stdout.WriteString(bl.String())
+				stdout.WriteByte('\n')
+			}
+		}
+		stdout.Flush()
+		wg.Done()
+	}()
+	return &wg
+
+}
+
+const chunkSize = 5000000
+
+type region struct {
+	chrom string
+	start int // 1-based start
+	i     int
+}
+
+func (r region) String() string {
+	return r.chrom + ":" + strconv.Itoa(r.start)
+}
+
+func genRegions(l int, chrom string) chan region {
+	ch := make(chan region, 2)
+	go func() {
+		var k int
+		for i := 0; i < l; i += chunkSize {
+			ch <- region{chrom: chrom, start: i + 1, i: k}
+			k++
+		}
+		close(ch)
+	}()
+	return ch
 }
 
 type site struct {
@@ -93,26 +164,82 @@ func sufficientDepth(s site, a *dargs) bool {
 	return n > a.minSamples
 }
 
-func aggregate(rdr *bufio.Reader, a *dargs, chrom string) {
-	stdout := bufio.NewWriter(os.Stdout)
-	defer stdout.Flush()
-	cache := make([]site, 0, 2000)
+type block struct {
+	chrom  string
+	start  int // 0-based
+	end    int // 1-based
+	depths []string
+}
 
+func (b block) String() string {
+	return fmt.Sprintf("%s\t%d\t%d\t%s", b.chrom, b.start, b.end, strings.Join(b.depths, "\t"))
+}
+
+func aggregate(a *dargs, r region, out chan []block) {
+	cache := make([]site, 0, 2000)
+	blocks := make([]block, 0, 256)
+
+	cargs := append([]string{"depth", "-Q", strconv.Itoa(a.Q), "-d", strconv.Itoa(a.MaxCov), "-r", r.String()}, a.Bams...)
+	cmd := exec.Command("samtools", cargs...)
+	cmd.Stderr = os.Stderr
+	pipeout, err := cmd.StdoutPipe()
+	if err != nil {
+		panic(err)
+	}
+
+	if err := cmd.Start(); err != nil {
+		panic(err)
+	}
+	rdr := bufio.NewReader(pipeout)
+	// since we are running multiple adjacent blocks in parallel:
+	// only start after we've seen empty
+	// only end after we've seen empty
+	seen0 := false
 	for line, err := rdr.ReadString('\n'); err == nil; line, err = rdr.ReadString('\n') {
 		s := parseLine(line)
-		if (len(cache) == 0 || cache[len(cache)-1].pos0+1 == s.pos0) && sufficientDepth(s, a) {
+		suf := sufficientDepth(s, a)
+		// check that we've encountered ...
+		if !suf {
+			seen0 = true
+			// once we complete a block, we bail if we're outside of the chunk.
+			if s.pos0 > r.start+chunkSize {
+				if len(cache) == 0 || s.pos0-cache[len(cache)-1].pos0 >= a.MaxSkip {
+					if err := cmd.Process.Kill(); err != nil {
+						panic(err)
+					}
+					break
+				}
+			}
+
+		}
+		// and are past a 0 region.
+		if !seen0 {
+			continue
+		}
+		if (len(cache) == 0 || s.pos0-(cache[len(cache)-1].pos0+1) <= a.MaxSkip) && suf {
 			cache = append(cache, s)
-		} else if len(cache) > 0 {
-			dps := means(cache)
-			fmt.Fprintf(stdout, "%s\t%d\t%d\t%s\n", chrom, cache[0].pos0, cache[len(cache)-1].pos0+1, strings.Join(dps, "\t"))
+		} else if len(cache) > 0 && s.pos0-(cache[len(cache)-1].pos0+1) > a.MaxSkip {
+			if len(cache) >= a.MinSize {
+				dps := means(cache)
+				blocks = append(blocks, block{chrom: a.Chrom, start: cache[0].pos0, end: cache[len(cache)-1].pos0 + 1, depths: dps})
+			}
 			cache = cache[:0]
+			if suf {
+				cache = append(cache, s)
+			}
 		}
 	}
 	if len(cache) > 0 {
 		dps := means(cache)
-		fmt.Fprintf(stdout, "%s\t%d\t%d\t%s\n", chrom, cache[0].pos0, cache[len(cache)-1].pos0+1, strings.Join(dps, "\t"))
+		blocks = append(blocks, block{chrom: a.Chrom, start: cache[0].pos0, end: cache[len(cache)-1].pos0 + 1, depths: dps})
 		cache = cache[:0]
 	}
+	if err := cmd.Wait(); err != nil {
+		if _, ok := err.(*exec.ExitError); !ok {
+			panic(err)
+		}
+	}
+	out <- blocks
 }
 
 func means(sites []site) []string {
