@@ -169,16 +169,16 @@ func getRef(b *bam.Reader, chrom string) *sam.Reference {
 	return nil
 }
 
-func getShortName(b string) string {
+func GetShortName(b string) (string, error) {
 
 	fh, err := os.Open(b)
 	if err != nil {
-		log.Fatal(err)
+		return "", err
 	}
 	defer fh.Close()
 	br, err := bam.NewReader(fh, 1)
 	if err != nil {
-		log.Fatal(err)
+		return "", err
 	}
 	defer br.Close()
 	m := make(map[string]bool)
@@ -186,15 +186,15 @@ func getShortName(b string) string {
 		m[rg.Get(sam.Tag([2]byte{'S', 'M'}))] = true
 	}
 	if len(m) > 1 {
-		log.Printf("warning: more than one tag for %s", b)
+		return "", fmt.Errorf("bam reagroup: more than one RG for %s", b)
 	}
 	for sm := range m {
-		return sm
+		return sm, nil
 	}
 	vs := strings.Split(b, "/")
 	v := vs[len(vs)-1]
 	vs = strings.SplitN(v, ".", 1)
-	return vs[len(vs)-1]
+	return vs[len(vs)-1], nil
 }
 
 func getWriter(base string) (*bgzf.Writer, error) {
@@ -317,7 +317,11 @@ func readIndex(r rdi) (*Index, string, int) {
 	}
 	idx := &Index{Index: dx, path: b}
 	idx.init()
-	return idx, getShortName(b), r.i
+	nm, err := GetShortName(b)
+	if err != nil {
+		panic(err)
+	}
+	return idx, nm, r.i
 }
 
 // if there are more samples than this then the depth plots won't be drawn.
@@ -468,7 +472,11 @@ func updateSlopes(rocs [][]float32, scalar float32, slopes []float32) {
 
 func checkSexes(obs map[string][]float64, exp []string) {
 	if len(obs) != len(exp) {
-		log.Fatalf("indexcov: expected %d sex chromosomes, found: %d", len(exp), len(obs))
+		msg := fmt.Sprintf("indexcov: expected %d sex chromosomes, found: %d", len(exp), len(obs))
+		if len(obs) == 0 {
+			log.Fatal(msg + " (FATAL)")
+		}
+		log.Println(msg + " (WARNING)")
 	}
 }
 
@@ -518,8 +526,7 @@ func writeIndex(sexes map[string][]float64, counts []*counter, keys []string, sa
 	} else {
 		for _, k := range keys {
 			if _, ok := sexes[k]; !ok {
-				fmt.Printf("chromosome %s not found. not writing ped\n", k)
-				os.Exit(1)
+				fmt.Printf("indexcov: chromosome %s not found.\n", k)
 			}
 		}
 	}
@@ -554,7 +561,11 @@ func writeIndex(sexes map[string][]float64, counts []*counter, keys []string, sa
 		sexes["_inferred"][i] = float64(inferred)
 		s := make([]string, 0, len(keys)+4)
 		for _, k := range keys {
-			s = append(s, fmt.Sprintf("%.2f", sexes[k][i]))
+			if _, ok := sexes[k]; ok {
+				s = append(s, fmt.Sprintf("%.2f", sexes[k][i]))
+			} else {
+				s = append(s, "-9")
+			}
 		}
 		cnt := counts[i]
 		s = append(s, []string{
