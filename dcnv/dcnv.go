@@ -183,52 +183,36 @@ func (ivs *Intervals) CorrectByGC(window int) {
 	// sort random to make sure adjacent true sites are randomized away from each other.
 	sortRandom(ivs)
 	sortByGC(ivs)
-	dps := make([]float32, len(ivs.Intervals))
+	var zscore ZScore
+	dps := make([]float64, len(ivs.Intervals))
+	z := zscore.Scale(ivs)
 	for sampleI := 0; sampleI < ivs.NSamples(); sampleI++ {
-		correctByMovingMedian(ivs, window, sampleI, dps)
+		mat64.Col(dps, sampleI, z)
+		corrected := correctByMovingMedian(window, dps)
+		z.SetCol(sampleI, corrected)
 	}
+	zscore.UnScale(ivs, z)
 }
 
-// after sorting by GC, this is used to adjust log2s to subtract bias (subtract the median).
-func correctByMovingMedian(ivs *Intervals, window int, sampleI int, dps []float32) {
-	regions := ivs.Intervals
-	for i, r := range regions {
-		dps[i] = r.AdjustedDepths[sampleI]
-	}
-	// get the median here:
-	sort.Slice(dps, func(i, j int) bool { return dps[i] < dps[j] })
-	med := dps[len(dps)/2]
-	mid := (window-1)/2 + 1
+// after sorting by GC, this is used to adjust zs to subtract bias (subtract the median).
+// it's assumed that this is sorted by whatever effect is to be removed.
+func correctByMovingMedian(window int, dps []float64) []float64 {
 
 	mm := movingmedian.NewMovingMedian(window)
+	mid := (window-1)/2 + 1
 	for i := 0; i < mid; i++ {
-		mm.Push(float64(regions[i].AdjustedDepths[sampleI]))
+		mm.Push(dps[i])
 	}
 
 	var i int
-	ratCut := float32(3.5)
-	for i = 0; i < len(regions)-mid; i++ {
-		mm.Push(float64(regions[i+mid].AdjustedDepths[sampleI]))
-		localMed := mm.Median()
-		if localMed > 0 && med > 0 {
-			rat := med / float32(localMed)
-			if rat > ratCut {
-				log.Println("rat hi:", rat)
-				rat = ratCut
-			}
-			if rat < 1/ratCut {
-				log.Println("rat lo:", rat)
-				rat = 1 / ratCut
-			}
-			regions[i].AdjustedDepths[sampleI] *= rat
-		}
+	for i = 0; i < len(dps)-mid; i++ {
+		mm.Push(dps[i+mid])
+		dps[i] -= mm.Median()
 	}
-	for ; i < len(regions); i++ {
-		localMed := mm.Median()
-		if localMed > 0 {
-			regions[i].AdjustedDepths[sampleI] *= (med / float32(localMed))
-		}
+	for ; i < len(dps); i++ {
+		dps[i] -= mm.Median()
 	}
+	return dps
 }
 
 // mean without the lowest and highest values.
@@ -363,7 +347,26 @@ func svdsd(vs []float32, mean float64) float64 {
 	return math.Sqrt(sd / float64(len(vs)-1))
 }
 
-func (ivs *Intervals) ToZScore() (*mat64.Dense, []float64, []float64) {
+type Scaler interface {
+	Scale(*Intervals) *mat64.Dense
+	UnScale(*Intervals, *mat64.Dense)
+}
+
+type ZScore struct {
+	means []float64
+	sds   []float64
+}
+
+func (z *ZScore) UnScale(ivs *Intervals, a *mat64.Dense) {
+	for i, iv := range ivs.Intervals {
+		row := a.RawRowView(i)
+		for k, v := range row {
+			iv.AdjustedDepths[k] = max32(0, float32(v*z.sds[i]+z.means[i]))
+		}
+	}
+}
+
+func (z *ZScore) Scale(ivs *Intervals) *mat64.Dense {
 	a := mat64.NewDense(len(ivs.Intervals), len(ivs.Samples), nil)
 	sl := make([]float64, len(ivs.Samples))
 	means := make([]float64, len(ivs.Intervals))
@@ -379,20 +382,14 @@ func (ivs *Intervals) ToZScore() (*mat64.Dense, []float64, []float64) {
 		means[i] = m
 		sds[i] = sd
 	}
-	return a, means, sds
-}
-
-func (ivs *Intervals) FromZScore(z *mat64.Dense, means []float64, sds []float64) {
-	for i, iv := range ivs.Intervals {
-		row := z.RawRowView(i)
-		for k, v := range row {
-			iv.AdjustedDepths[k] = max32(0, float32(v*sds[i]+means[i]))
-		}
-	}
+	z.means = means
+	z.sds = sds
+	return a
 }
 
 func (ivs *Intervals) SVD(n int) {
-	z, means, sds := ivs.ToZScore()
+	var zscore ZScore
+	z := zscore.Scale(ivs)
 	var svd mat64.SVD
 	if ok := svd.Factorize(z, matrix.SVDThin); !ok {
 		panic("error with SVD")
@@ -412,7 +409,7 @@ func (ivs *Intervals) SVD(n int) {
 	ans.Product(u, sigma, v)
 
 	// convert back from z-score to depth
-	ivs.FromZScore(&ans, means, sds)
+	zscore.UnScale(ivs, &ans)
 }
 
 func max32(a, b float32) float32 {
@@ -518,9 +515,9 @@ func main() {
 	_ = window
 
 	ivs.CorrectBySampleMedian()
-	ivs.SVD(7)
 	ivs.CorrectByGC(window)
 	ivs.SortByPosition()
+	ivs.SVD(7)
 	log.Println(ivs.SampleMedians())
 
 	nsites := len(ivs.Intervals)
