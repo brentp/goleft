@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	arg "github.com/alexflint/go-arg"
+	"github.com/brentp/goleft/indexcov"
 )
 
 type dargs struct {
@@ -21,20 +22,27 @@ type dargs struct {
 	minSamples int      `arg:"-"`
 }
 
-const command = "samtools depth -Q %d -d %d -r '%s' %s"
-
 func main() {
 	args := dargs{Q: 10, MinCov: 7, MaxCov: 1000, MinSamples: 0.5}
 	if p := arg.MustParse(&args); len(args.Bams) == 0 {
 		p.Fail("specify > 1 bam")
 	}
+	hdr := make([]string, 1, len(args.Bams)+1)
+	hdr[0] = "#chrom\tstart\tend"
 
 	args.minSamples = int(0.5 + args.MinSamples*float64(len(args.Bams)))
 	bams := make([]string, len(args.Bams))
 	for i, b := range args.Bams {
-		bams[i] = fmt.Sprintf("'%s'", b)
+		bams[i] = b
+		nm, err := indexcov.GetShortName(b)
+		if err != nil {
+			panic(err)
+		}
+		hdr = append(hdr, nm)
 	}
-	cmd := exec.Command("bash", "-c", fmt.Sprintf(command, args.Q, args.MaxCov, args.Chrom, strings.Join(bams, "\t")))
+	cargs := append([]string{"depth", "-Q", strconv.Itoa(args.Q), "-d", strconv.Itoa(args.MaxCov), "-r", args.Chrom}, bams...)
+	cmd := exec.Command("samtools", cargs...)
+	cmd.Stderr = os.Stderr
 	pipeout, err := cmd.StdoutPipe()
 	if err != nil {
 		panic(err)
@@ -44,7 +52,11 @@ func main() {
 		panic(err)
 	}
 
+	fmt.Println(strings.Join(hdr, "\t"))
 	aggregate(bufio.NewReader(pipeout), &args, args.Chrom)
+	if err := cmd.Wait(); err != nil {
+		panic(err)
+	}
 }
 
 type site struct {
