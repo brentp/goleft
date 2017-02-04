@@ -1,3 +1,4 @@
+// Package scalers holds the interface for scaling depths to standardized scores.
 package scalers
 
 import (
@@ -17,6 +18,8 @@ type Scaler interface {
 	// Values should return the existing array when possible; otherwise, it must create one of size r, c.
 	Values(r, c int) *mat64.Dense
 }
+
+var _ Scaler = &ZScore{}
 
 // ZScore implements the Scaler interface for StdScore (z-score)
 type ZScore struct {
@@ -40,7 +43,6 @@ func (z *ZScore) UnScale() {
 	for i := 0; i < r; i++ {
 		row := a.RawRowView(i)
 		for c, v := range row {
-			// TODO: make sure this checks out.
 			row[c] = math.Max(0, v*z.sds[i]+z.means[i])
 		}
 	}
@@ -61,5 +63,42 @@ func (z *ZScore) Scale() {
 		}
 		z.means[i] = m
 		z.sds[i] = sd
+	}
+}
+
+// Log2 implements Scaler interface to perform log2 transformation on depths.
+type Log2 struct {
+	mat *mat64.Dense
+}
+
+// Values returns existing matrix or a new one of the given size.
+func (l *Log2) Values(r, c int) *mat64.Dense {
+	if l.mat == nil {
+		l.mat = mat64.NewDense(r, c, nil)
+	}
+	return l.mat
+}
+
+// Scale converts from depths to log2s
+func (l *Log2) Scale() {
+	a := l.mat
+	r, _ := a.Dims()
+	for i := 0; i < r; i++ {
+		row := a.RawRowView(i)
+		for c, d := range row {
+			row[c] = math.Log2(d)
+		}
+	}
+}
+
+// UnScale converts from log2s to depths
+func (l *Log2) UnScale() {
+	a := l.mat
+	r, _ := a.Dims()
+	for i := 0; i < r; i++ {
+		row := a.RawRowView(i)
+		for c, d := range row {
+			row[c] = math.Pow(2, d)
+		}
 	}
 }
