@@ -7,6 +7,7 @@ import (
 
 	"github.com/brentp/goleft/dcnv/scalers"
 	"github.com/gonum/floats"
+	"github.com/gonum/matrix/mat64"
 	"github.com/gonum/stat"
 )
 
@@ -15,7 +16,7 @@ const eps = 0.001
 func TestZScoreRoundTrip(t *testing.T) {
 
 	zsc := &scalers.ZScore{}
-	mat := zsc.Values(10, 10)
+	mat := mat64.NewDense(10, 10, nil)
 	r, c := mat.Dims()
 	if r != 10 || c != 10 {
 		t.Fatal("unexpected size")
@@ -26,13 +27,13 @@ func TestZScoreRoundTrip(t *testing.T) {
 		}
 	}
 
-	zsc.Scale()
+	zsc.Scale(mat)
 	for i := 0; i < r; i++ {
 		if math.Abs(stat.Mean(mat.RawRowView(i), nil)) > eps {
 			t.Fatalf("expected 0, got %f", stat.Mean(mat.RawRowView(i), nil))
 		}
 	}
-	zsc.UnScale()
+	zsc.UnScale(mat)
 	for i := 0; i < r; i++ {
 		row := mat.RawRowView(i)
 		for j := 0; j < c; j++ {
@@ -47,7 +48,7 @@ func TestZScoreRoundTrip(t *testing.T) {
 func TestLog2RoundTrip(t *testing.T) {
 
 	zsc := &scalers.Log2{}
-	mat := zsc.Values(10, 10)
+	mat := mat64.NewDense(10, 10, nil)
 	r, c := mat.Dims()
 	if r != 10 || c != 10 {
 		t.Fatal("unexpected size")
@@ -58,13 +59,13 @@ func TestLog2RoundTrip(t *testing.T) {
 		}
 	}
 
-	zsc.Scale()
+	zsc.Scale(mat)
 	for i := 0; i < r; i++ {
 		if floats.Min(mat.RawRowView(i)) < 0 {
 			t.Fatalf("log2:expected >0, got %f", stat.Mean(mat.RawRowView(i), nil))
 		}
 	}
-	zsc.UnScale()
+	zsc.UnScale(mat)
 	for i := 0; i < r; i++ {
 		row := mat.RawRowView(i)
 		for j := 0; j < c; j++ {
