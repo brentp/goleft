@@ -28,32 +28,6 @@ type Interval struct {
 	Depths         []float32
 	GC             float32
 	AdjustedDepths []float32
-	cns            []int
-}
-
-func (i *Interval) copy(cns []int) *Interval {
-	n := len(i.Depths)
-	c := &Interval{Start: i.Start, End: i.End, Depths: make([]float32, n),
-		cns: cns,
-		GC:  i.GC, AdjustedDepths: make([]float32, n)}
-	for k := 0; k < n; k++ {
-		c.Depths[k] = i.Depths[k]
-		c.AdjustedDepths[k] = i.AdjustedDepths[k]
-	}
-	return c
-}
-
-// combine the data from 2 intervals.
-func (i *Interval) update(b *Interval) {
-	n := len(i.Depths)
-	ilen := float32(i.End - i.Start)
-	blen := float32(b.End - b.Start)
-	tot := ilen + blen
-	for k := 0; k < n; k++ {
-		i.Depths[k] = (ilen*i.Depths[k] + blen*b.Depths[k]) / tot
-		i.AdjustedDepths[k] = (ilen*i.AdjustedDepths[k] + blen*b.AdjustedDepths[k]) / tot
-	}
-	i.End = b.End
 }
 
 // Intervals is the wrapper for a slice of intervals.
@@ -112,7 +86,7 @@ func intervalFromLine(l string, fa *faidx.Faidx) *Interval {
 		iv.Depths = append(iv.Depths, d)
 		iv.AdjustedDepths = append(iv.AdjustedDepths, d)
 	}
-	// subtract since GC before will afffect reads here.
+	// subtract $n bases since GC before will afffect reads here.
 	st, err := fa.Stats(toks[0], int(iv.Start)-100, int(iv.End))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -185,18 +159,17 @@ func (ivs *Intervals) CorrectByGC(window int) {
 	sortRandom(ivs)
 	sortByGC(ivs)
 	zscore := &scalers.ZScore{}
-	r, c := len(ivs.Intervals), len(ivs.Samples)
+	r, _ := len(ivs.Intervals), len(ivs.Samples)
 	dps := make([]float64, r)
-	ivs.IntoScaler(zscore)
-	zscore.Scale()
-	z := zscore.Values(r, c)
-	log.Println(z.Dims())
+	z := ivs.IntoMatrix(nil)
+	zscore.Scale(z)
 	for sampleI := 0; sampleI < ivs.NSamples(); sampleI++ {
 		mat64.Col(dps, sampleI, z)
 		corrected := correctByMovingMedian(window, dps)
 		z.SetCol(sampleI, corrected)
 	}
-	zscore.UnScale()
+	zscore.UnScale(z)
+	ivs.FromMatrix(z)
 }
 
 // after sorting by GC, this is used to adjust zs to subtract bias (subtract the median).
@@ -352,35 +325,34 @@ func svdsd(vs []float32, mean float64) float64 {
 	return math.Sqrt(sd / float64(len(vs)-1))
 }
 
-func (ivs *Intervals) FromScaler(s scalers.Scaler) {
-	a := s.Values(len(ivs.Intervals), ivs.NSamples())
+func (ivs *Intervals) FromMatrix(mat *mat64.Dense) {
 	for i, iv := range ivs.Intervals {
-		row := a.RawRowView(i)
+		row := mat.RawRowView(i)
 		for k, v := range row {
 			iv.AdjustedDepths[k] = max32(0, float32(v))
 		}
 	}
 }
 
-func (ivs *Intervals) IntoScaler(s scalers.Scaler) {
-	a := s.Values(len(ivs.Intervals), len(ivs.Samples))
+func (ivs *Intervals) IntoMatrix(mat *mat64.Dense) *mat64.Dense {
+	if mat == nil {
+		mat = mat64.NewDense(len(ivs.Intervals), len(ivs.Samples), nil)
+	}
 	for i, iv := range ivs.Intervals {
-		row := a.RawRowView(i)
+		row := mat.RawRowView(i)
 		for i, d := range iv.AdjustedDepths {
 			row[i] = float64(d)
 		}
 	}
-
+	return mat
 }
 
 func (ivs *Intervals) SVD(n int) {
 	zscore := &scalers.ZScore{}
 	log.Println(ivs.Intervals[0].AdjustedDepths)
-	ivs.IntoScaler(zscore)
-	zscore.Scale()
+	z := ivs.IntoMatrix(nil)
+	zscore.Scale(z)
 	var svd mat64.SVD
-	r, c := len(ivs.Intervals), len(ivs.Samples)
-	z := zscore.Values(r, c)
 	log.Println(z.RowView(0))
 	if ok := svd.Factorize(z, matrix.SVDThin); !ok {
 		panic("error with SVD")
@@ -397,8 +369,8 @@ func (ivs *Intervals) SVD(n int) {
 	}
 
 	z.Product(u, sigma, v)
-	zscore.UnScale()
-	ivs.FromScaler(zscore)
+	zscore.UnScale(z)
+	ivs.FromMatrix(z)
 }
 
 func max32(a, b float32) float32 {
