@@ -17,6 +17,7 @@ import (
 	"github.com/brentp/xopen"
 	"github.com/gonum/matrix"
 	"github.com/gonum/matrix/mat64"
+	"github.com/gonum/stat"
 	"go4.org/sort"
 )
 
@@ -183,15 +184,19 @@ func (ivs *Intervals) CorrectByGC(window int) {
 	// sort random to make sure adjacent true sites are randomized away from each other.
 	sortRandom(ivs)
 	sortByGC(ivs)
-	var zscore ZScore
-	dps := make([]float64, len(ivs.Intervals))
-	z := zscore.Scale(ivs)
+	zscore := &ZScore{}
+	r, c := len(ivs.Intervals), len(ivs.Samples)
+	dps := make([]float64, r)
+	ivs.IntoScaler(zscore)
+	zscore.Scale()
+	z := zscore.Values(r, c)
+	log.Println(z.Dims())
 	for sampleI := 0; sampleI < ivs.NSamples(); sampleI++ {
 		mat64.Col(dps, sampleI, z)
 		corrected := correctByMovingMedian(window, dps)
 		z.SetCol(sampleI, corrected)
 	}
-	zscore.UnScale(ivs, z)
+	zscore.UnScale()
 }
 
 // after sorting by GC, this is used to adjust zs to subtract bias (subtract the median).
@@ -347,50 +352,86 @@ func svdsd(vs []float32, mean float64) float64 {
 	return math.Sqrt(sd / float64(len(vs)-1))
 }
 
+// TODO: might new New(r, c)
 type Scaler interface {
-	Scale(*Intervals) *mat64.Dense
-	UnScale(*Intervals, *mat64.Dense)
+	Scale()
+	UnScale()
+	// Values should return an existing array when possible. If not, it will create one of size r, c
+	Values(r, c int) *mat64.Dense
 }
 
 type ZScore struct {
 	means []float64
 	sds   []float64
+	mat   *mat64.Dense
 }
 
-func (z *ZScore) UnScale(ivs *Intervals, a *mat64.Dense) {
+func (z *ZScore) Values(r, c int) *mat64.Dense {
+	if z.mat == nil {
+		z.mat = mat64.NewDense(r, c, nil)
+	}
+	return z.mat
+}
+
+func (ivs *Intervals) FromScaler(s Scaler) {
+	a := s.Values(len(ivs.Intervals), ivs.NSamples())
 	for i, iv := range ivs.Intervals {
 		row := a.RawRowView(i)
 		for k, v := range row {
-			iv.AdjustedDepths[k] = max32(0, float32(v*z.sds[i]+z.means[i]))
+			iv.AdjustedDepths[k] = max32(0, float32(v))
 		}
 	}
 }
 
-func (z *ZScore) Scale(ivs *Intervals) *mat64.Dense {
-	a := mat64.NewDense(len(ivs.Intervals), len(ivs.Samples), nil)
-	sl := make([]float64, len(ivs.Samples))
-	means := make([]float64, len(ivs.Intervals))
-	sds := make([]float64, len(ivs.Intervals))
-	// convert to z-score
+func (ivs *Intervals) IntoScaler(s Scaler) {
+	a := s.Values(len(ivs.Intervals), len(ivs.Samples))
 	for i, iv := range ivs.Intervals {
-		m := svdmean(iv.AdjustedDepths)
-		sd := svdsd(iv.AdjustedDepths, m)
-		for k, v := range iv.AdjustedDepths {
-			sl[k] = (float64(v) - m) / sd
+		row := a.RawRowView(i)
+		for i, d := range iv.AdjustedDepths {
+			row[i] = float64(d)
 		}
-		a.SetRow(i, sl)
-		means[i] = m
-		sds[i] = sd
 	}
-	z.means = means
-	z.sds = sds
-	return a
+
+}
+
+func (z *ZScore) UnScale() {
+	a := z.mat
+	r, _ := a.Dims()
+	for i := 0; i < r; i++ {
+		row := a.RawRowView(i)
+		for c, v := range row {
+			// TODO: make sure this checks out.
+			row[c] = math.Max(0, v*z.sds[i]+z.means[i])
+		}
+	}
+}
+
+func (z *ZScore) Scale() {
+	a := z.mat
+	r, _ := a.Dims()
+	z.means = make([]float64, r)
+	z.sds = make([]float64, r)
+	// convert to z-score
+	for i := 0; i < r; i++ {
+		row := a.RawRowView(i)
+		m, sd := stat.MeanStdDev(row, nil)
+		for c, d := range row {
+			row[c] = (d - m) / sd
+		}
+		z.means[i] = m
+		z.sds[i] = sd
+	}
 }
 
 func (ivs *Intervals) SVD(n int) {
-	var zscore ZScore
-	z := zscore.Scale(ivs)
+	zscore := &ZScore{}
+	log.Println(ivs.Intervals[0].AdjustedDepths)
+	ivs.IntoScaler(zscore)
+	zscore.Scale()
 	var svd mat64.SVD
+	r, c := len(ivs.Intervals), len(ivs.Samples)
+	z := zscore.Values(r, c)
+	log.Println(z.RowView(0))
 	if ok := svd.Factorize(z, matrix.SVDThin); !ok {
 		panic("error with SVD")
 	}
@@ -405,11 +446,9 @@ func (ivs *Intervals) SVD(n int) {
 		sigma.Set(i, i, s[i])
 	}
 
-	var ans mat64.Dense
-	ans.Product(u, sigma, v)
-
-	// convert back from z-score to depth
-	zscore.UnScale(ivs, &ans)
+	z.Product(u, sigma, v)
+	zscore.UnScale()
+	ivs.FromScaler(zscore)
 }
 
 func max32(a, b float32) float32 {
@@ -515,7 +554,7 @@ func main() {
 	_ = window
 
 	ivs.CorrectBySampleMedian()
-	ivs.CorrectByGC(window)
+	//ivs.CorrectByGC(window)
 	ivs.SortByPosition()
 	ivs.SVD(7)
 	log.Println(ivs.SampleMedians())
