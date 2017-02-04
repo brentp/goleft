@@ -1,6 +1,7 @@
 package debiaser
 
 import (
+	"github.com/JaderDias/movingmedian"
 	"github.com/gonum/floats"
 	"github.com/gonum/matrix/mat64"
 )
@@ -23,6 +24,11 @@ type SortedDebiaser interface {
 	Debiaser
 }
 
+// GeneralDebiaser is an implementation of a SortedDebiaser that can be used simply by setting attributes.int
+// Vals and Posns should have equal length.
+// Window is the size of the moving window for correction.
+// Usage is to Call GeneralDebiaser.Sort() then Debias(), then Unsort(). Presumbly, Those calls will be flanked
+// by a scaler call such as to scaler.ZScore.
 type GeneralDebiaser struct {
 	Vals   []float64
 	Posns  []uint32
@@ -42,6 +48,7 @@ func (g *GeneralDebiaser) setTmp(r, c int) {
 	}
 }
 
+// Sort sorts the rows in mat according the order in g.Vals.
 func (g *GeneralDebiaser) Sort(mat *mat64.Dense) {
 	if g.inds == nil {
 		g.inds = make([]int, len(g.Vals))
@@ -60,6 +67,7 @@ func (g *GeneralDebiaser) Sort(mat *mat64.Dense) {
 	mat.Copy(g.tmp)
 }
 
+// Unsort reverts the values to be position sorted.
 func (g *GeneralDebiaser) Unsort(mat *mat64.Dense) {
 	if g.inds == nil {
 		panic("unsort: must call sort first")
@@ -77,4 +85,31 @@ func (g *GeneralDebiaser) Unsort(mat *mat64.Dense) {
 		g.Posns[ai] = posns[bi]
 	}
 	g.Vals = tmp
+}
+
+// Debias by subtracting moving median in each sample.
+// It's assumed that g.Sort() has been called before this and that g.Unsort() will be called after.
+// It's also assumed that the values in mat have been scaled, for example by a `scaler.ZScore`.
+func (g *GeneralDebiaser) Debias(mat *mat64.Dense) {
+	r, c := mat.Dims()
+	col := make([]float64, r)
+	for sampleI := 0; sampleI < c; sampleI++ {
+		mat64.Col(col, sampleI, mat)
+
+		mm := movingmedian.NewMovingMedian(g.Window)
+		mid := (g.Window-1)/2 + 1
+		for i := 0; i < mid; i++ {
+			mm.Push(col[i])
+		}
+
+		var i int
+		for i = 0; i < len(col)-mid; i++ {
+			mm.Push(col[i+mid])
+			col[i] -= mm.Median()
+		}
+		for ; i < len(col); i++ {
+			col[i] -= mm.Median()
+		}
+		mat.SetCol(sampleI, col)
+	}
 }
