@@ -86,7 +86,7 @@ func TestGeneralDebiasSort(t *testing.T) {
 func TestGeneralDebias(t *testing.T) {
 	g := debiaser.GeneralDebiaser{Vals: []float64{0, 1, 2, 3, 10, 9, 8, 6, 5, 4, 3, 2, 1, 0.5},
 		Window: 1,
-		Posns:  []uint32{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13},
+		Posns:  []uint32{0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14},
 	}
 	mat := mat64.NewDense(len(g.Posns), 7, nil)
 	fillMatrix(mat)
@@ -102,4 +102,13 @@ func TestGeneralDebias(t *testing.T) {
 	zscore.UnScale(mat)
 	//fmt.Println("after")
 	//printMatrix(mat)
+	if reflect.DeepEqual(g.Posns, []uint32{0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14}) {
+		t.Fatal("expected unsorted posns")
+	}
+
+	g.Unsort(mat)
+	if !reflect.DeepEqual(g.Posns, []uint32{0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14}) {
+		t.Fatal("expected sorted posns")
+	}
+
 }

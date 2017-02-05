@@ -80,9 +80,9 @@ func (g *GeneralDebiaser) Unsort(mat *mat64.Dense) {
 	posns := make([]uint32, len(g.Posns))
 	copy(posns, g.Posns)
 	for ai, bi := range g.inds {
-		mat.SetRow(ai, g.tmp.RawRowView(bi))
-		tmp[ai] = g.Vals[bi]
-		g.Posns[ai] = posns[bi]
+		mat.SetRow(bi, g.tmp.RawRowView(ai))
+		tmp[bi] = g.Vals[ai]
+		g.Posns[bi] = posns[ai]
 	}
 	g.Vals = tmp
 }
