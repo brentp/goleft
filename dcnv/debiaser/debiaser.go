@@ -97,9 +97,12 @@ func (g *GeneralDebiaser) Debias(mat *mat64.Dense) {
 		for i := 0; i < mid; i++ {
 			mm.Push(col[i])
 		}
+		for i := 0; i < mid; i++ {
+			col[i] -= mm.Median()
+		}
 
 		var i int
-		for i = 0; i < len(col)-mid; i++ {
+		for i = mid; i < len(col)-mid; i++ {
 			mm.Push(col[i+mid])
 			col[i] -= mm.Median()
 		}

@@ -3,6 +3,7 @@ package scalers
 
 import (
 	"math"
+	"sort"
 
 	"github.com/gonum/matrix/mat64"
 	"github.com/gonum/stat"
@@ -54,24 +55,75 @@ func (z *ZScore) Scale(a *mat64.Dense) {
 	}
 }
 
+type RowCentered struct {
+	Centerer func([]float64) float64
+	centers  []float64
+}
+
+func (rc *RowCentered) Scale(a *mat64.Dense) {
+	r, _ := a.Dims()
+	if rc.centers == nil {
+		rc.centers = make([]float64, 0, r)
+	}
+	rc.centers = rc.centers[:0]
+	for i := 0; i < r; i++ {
+		row := a.RawRowView(i)
+		rc.centers = append(rc.centers, rc.Centerer(row))
+		for c := range row {
+			row[c] -= rc.centers[i]
+		}
+	}
+
+}
+
+func (rc *RowCentered) UnScale(a *mat64.Dense) {
+	r, _ := a.Dims()
+	for i := 0; i < r; i++ {
+		row := a.RawRowView(i)
+		cnt := rc.centers[i]
+		for j := range row {
+			row[j] += cnt
+		}
+	}
+}
+
+func gmean(vs []float64) float64 {
+	os := make([]float64, len(vs))
+	copy(os, vs)
+	sort.Float64s(os)
+	return os[len(os)/2]
+	return stat.Mean(vs, nil)
+}
+
 // Log2 implements Scaler interface to perform log2 transformation on depths.
 type Log2 struct {
+	RC *RowCentered
 }
 
 // Scale converts from depths to log2s
 func (l *Log2) Scale(a *mat64.Dense) {
 	r, _ := a.Dims()
+	if l.RC == nil {
+		l.RC = &RowCentered{Centerer: gmean}
+	}
 	for i := 0; i < r; i++ {
 		row := a.RawRowView(i)
 		for c, d := range row {
-			row[c] = math.Log2(d)
+			if d > 0 {
+				row[c] = math.Log2(d)
+			} else {
+				// use -6 because much lower numbers screw the SVD scaling.
+				row[c] = -6
+			}
 		}
 	}
+	l.RC.Scale(a)
 }
 
 // UnScale converts from log2s to depths
 func (l *Log2) UnScale(a *mat64.Dense) {
 	r, _ := a.Dims()
+	l.RC.UnScale(a)
 	for i := 0; i < r; i++ {
 		row := a.RawRowView(i)
 		for c, d := range row {

@@ -305,7 +305,7 @@ func main() {
 		defer pprof.StopCPUProfile()
 	*/
 
-	window := 19
+	window := 13
 	bed := os.Args[1]
 	fasta := os.Args[2]
 	ivs := &Intervals{}
@@ -319,14 +319,16 @@ func main() {
 		Vals:   make([]float64, len(ivs.GCs)),
 		Window: window}
 	zsc := &scalers.ZScore{}
+	l2 := &scalers.Log2{}
 	// correct by Size
 	for i := 0; i < len(ivs.Ends); i++ {
 		db.Vals[i] = float64(ivs.Ends[i] - ivs.Starts[i])
 	}
 	Pipeliner(ivs.Depths, zsc.Scale, db.Sort, db.Debias, db.Unsort)
+	_, _ = zsc, l2
 
 	// Correct by GC
-	db.Vals = ivs.GCs
+	copy(db.Vals, ivs.GCs)
 	Pipeliner(ivs.Depths, db.Sort, db.Debias, db.Unsort)
 
 	svd := debiaser.SVD{MinVariancePct: 5}
