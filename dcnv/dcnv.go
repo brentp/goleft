@@ -14,7 +14,6 @@ import (
 	"github.com/brentp/goleft/dcnv/scalers"
 	"github.com/brentp/goleft/emdepth"
 	"github.com/brentp/xopen"
-	"github.com/gonum/matrix"
 	"github.com/gonum/matrix/mat64"
 	"go4.org/sort"
 )
@@ -144,17 +143,6 @@ func Pipeliner(mat *mat64.Dense, fns ...MatFn) {
 	}
 }
 
-func (ivs *Intervals) CorrectByGC(window int) {
-	// TODO: put the debiaser on the Intervals object append
-	// figure out how to make this Scale->Sort->Debias->Unsort->Unscale more sane.
-	db := debiaser.GeneralDebiaser{
-		Posns:  ivs.Starts,
-		Vals:   ivs.GCs,
-		Window: window}
-	zsc := &scalers.ZScore{}
-	Pipeliner(ivs.Depths, zsc.Scale, db.Sort, db.Debias, db.Unsort, zsc.UnScale)
-}
-
 // mean without the lowest and highest values.
 func mean(in []float64) float64 {
 
@@ -252,52 +240,6 @@ func (ivs *Intervals) printCNVs(cnvs []*emdepth.CNV, samples []string) {
 	}
 }
 
-func allEqual(a, b []int) bool {
-	for i, v := range a {
-		if v != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
-func (ivs *Intervals) SVD(n int) {
-	zscore := &scalers.ZScore{}
-	zscore.Scale(ivs.Depths)
-	var svd mat64.SVD
-	if ok := svd.Factorize(ivs.Depths, matrix.SVDThin); !ok {
-		panic("error with SVD")
-	}
-
-	// get svd and zero out first n components.
-	s, u, v := extractSVD(&svd)
-	for i := 0; i < n; i++ {
-		s[i] = 0
-	}
-	sigma := mat64.NewDense(len(s), len(s), nil)
-	for i := 0; i < len(s); i++ {
-		sigma.Set(i, i, s[i])
-	}
-
-	ivs.Depths.Product(u, sigma, v)
-	zscore.UnScale(ivs.Depths)
-}
-
-func max32(a, b float64) float64 {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-func extractSVD(svd *mat64.SVD) (s []float64, u, v *mat64.Dense) {
-	var um, vm mat64.Dense
-	um.UFromSVD(svd)
-	vm.VFromSVD(svd)
-	s = svd.Values(nil)
-	return s, &um, &vm
-}
-
 func (ivs *Intervals) ReadRegions(path string, fasta string) {
 	fai, err := faidx.New(fasta)
 	if err != nil {
@@ -372,9 +314,23 @@ func main() {
 	_ = window
 
 	ivs.CorrectBySampleMedian()
-	ivs.CorrectByGC(window)
-	ivs.SVD(7)
-	log.Println(ivs.SampleMedians())
+
+	db := debiaser.GeneralDebiaser{
+		Vals:   make([]float64, len(ivs.GCs)),
+		Window: window}
+	zsc := &scalers.ZScore{}
+	// correct by Size
+	for i := 0; i < len(ivs.Ends); i++ {
+		db.Vals[i] = float64(ivs.Ends[i] - ivs.Starts[i])
+	}
+	Pipeliner(ivs.Depths, zsc.Scale, db.Sort, db.Debias, db.Unsort)
+
+	// Correct by GC
+	db.Vals = ivs.GCs
+	Pipeliner(ivs.Depths, db.Sort, db.Debias, db.Unsort)
+
+	svd := debiaser.SVD{MinVariancePct: 5}
+	Pipeliner(ivs.Depths, svd.Debias, zsc.UnScale)
 
 	nsites, nsamples := ivs.Depths.Dims()
 	dps := make([]string, nsamples)

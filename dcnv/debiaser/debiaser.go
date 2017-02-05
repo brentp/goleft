@@ -1,8 +1,12 @@
 package debiaser
 
 import (
+	"fmt"
+	"log"
+
 	"github.com/JaderDias/movingmedian"
 	"github.com/gonum/floats"
+	"github.com/gonum/matrix"
 	"github.com/gonum/matrix/mat64"
 )
 
@@ -25,13 +29,11 @@ type SortedDebiaser interface {
 }
 
 // GeneralDebiaser is an implementation of a SortedDebiaser that can be used simply by setting attributes.int
-// Vals and Posns should have equal length.
 // Window is the size of the moving window for correction.
 // Usage is to Call GeneralDebiaser.Sort() then Debias(), then Unsort(). Presumbly, Those calls will be flanked
 // by a scaler call such as to scaler.ZScore.
 type GeneralDebiaser struct {
 	Vals   []float64
-	Posns  []uint32
 	Window int
 	inds   []int
 	tmp    *mat64.Dense
@@ -56,12 +58,9 @@ func (g *GeneralDebiaser) Sort(mat *mat64.Dense) {
 	floats.Argsort(g.Vals, g.inds)
 	r, c := mat.Dims()
 	g.setTmp(r, c)
-	posns := make([]uint32, len(g.Posns))
-	copy(posns, g.Posns)
 
 	for ai, bi := range g.inds {
 		g.tmp.SetRow(ai, mat.RawRowView(bi))
-		g.Posns[ai] = posns[bi]
 	}
 	// copy g.tmp into mat
 	mat.Copy(g.tmp)
@@ -77,12 +76,9 @@ func (g *GeneralDebiaser) Unsort(mat *mat64.Dense) {
 	// copy mat into g.tmp
 	g.tmp.Copy(mat)
 	tmp := make([]float64, len(g.Vals))
-	posns := make([]uint32, len(g.Posns))
-	copy(posns, g.Posns)
 	for ai, bi := range g.inds {
 		mat.SetRow(bi, g.tmp.RawRowView(ai))
 		tmp[bi] = g.Vals[ai]
-		g.Posns[bi] = posns[ai]
 	}
 	g.Vals = tmp
 }
@@ -112,4 +108,42 @@ func (g *GeneralDebiaser) Debias(mat *mat64.Dense) {
 		}
 		mat.SetCol(sampleI, col)
 	}
+}
+
+type SVD struct {
+	MinVariancePct float64
+}
+
+func (isvd *SVD) Debias(mat *mat64.Dense) {
+	var svd mat64.SVD
+	if ok := svd.Factorize(mat, matrix.SVDThin); !ok {
+		panic("error with SVD")
+	}
+
+	// get svd and zero out first n components.
+	s, u, v := extractSVD(&svd)
+	sum := floats.Sum(s)
+	str := "variance:"
+
+	var n int
+	for n = 0; n < 15 && 100*s[n]/sum > isvd.MinVariancePct; n++ {
+		str += fmt.Sprintf(" %.2f", 100*s[n]/sum)
+	}
+	log.Println(str)
+
+	sigma := mat64.NewDense(len(s), len(s), nil)
+	// leave the first n as 0 and set the rest.
+	for i := n; i < len(s); i++ {
+		sigma.Set(i, i, s[i])
+	}
+
+	mat.Product(u, sigma, v)
+}
+
+func extractSVD(svd *mat64.SVD) (s []float64, u, v *mat64.Dense) {
+	var um, vm mat64.Dense
+	um.UFromSVD(svd)
+	vm.VFromSVD(svd)
+	s = svd.Values(nil)
+	return s, &um, &vm
 }
