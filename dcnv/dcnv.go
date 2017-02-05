@@ -136,6 +136,14 @@ func median(b []float64) float64 {
 	return a[len(a)/2]
 }
 
+type MatFn func(*mat64.Dense)
+
+func Pipeliner(mat *mat64.Dense, fns ...MatFn) {
+	for _, fn := range fns {
+		fn(mat)
+	}
+}
+
 func (ivs *Intervals) CorrectByGC(window int) {
 	// TODO: put the debiaser on the Intervals object append
 	// figure out how to make this Scale->Sort->Debias->Unsort->Unscale more sane.
@@ -144,11 +152,7 @@ func (ivs *Intervals) CorrectByGC(window int) {
 		Vals:   ivs.GCs,
 		Window: window}
 	zsc := &scalers.ZScore{}
-	zsc.Scale(ivs.Depths)
-	db.Sort(ivs.Depths)
-	db.Debias(ivs.Depths)
-	db.Unsort(ivs.Depths)
-	zsc.UnScale(ivs.Depths)
+	Pipeliner(ivs.Depths, zsc.Scale, db.Sort, db.Debias, db.Unsort, zsc.UnScale)
 }
 
 // mean without the lowest and highest values.
