@@ -22,6 +22,7 @@ type dargs struct {
 	MaxCov     int      `arg:"help:maximum depth considered callable"`
 	MaxSkip    int      `arg:"-k,help:skip this many uncovered bases before forcing a new block"`
 	MinSize    int      `arg:"-m,help:only report blocks of at least this length"`
+	Window     int      `arg:"-w,help:discretize into windows of this size"`
 	Processes  int      `arg:"-p,help:number of processors to use"`
 	MinSamples float64  `arg:"help:proportion of samples with mincov coverage for a region to be reported"`
 	Bams       []string `arg:"positional,required,help:bams for which to calculate depth"`
@@ -46,7 +47,7 @@ func chromSize(path string, chrom string) int {
 }
 
 func main() {
-	args := dargs{Q: 10, MinCov: 7, MaxCov: 1000, MinSamples: 0.5, MinSize: 15, MaxSkip: 10}
+	args := dargs{Q: 10, MinCov: 7, MaxCov: 1000, MinSamples: 0.5, MinSize: 15, MaxSkip: 10, Window: 1e7}
 	if p := arg.MustParse(&args); len(args.Bams) == 0 {
 		p.Fail("specify > 1 bam")
 	}
@@ -175,11 +176,28 @@ func (b block) String() string {
 	return fmt.Sprintf("%s\t%d\t%d\t%s", b.chrom, b.start, b.end, strings.Join(b.depths, "\t"))
 }
 
+func splitBlocks(chrom string, cache []site, a *dargs) []block {
+	blocks := make([]block, 0, 2)
+
+	var i, lasti int
+	for i < len(cache) {
+		blk := block{chrom: chrom, start: cache[i].pos0}
+		i++
+		for ; i < len(cache) && cache[i].pos0-blk.start < a.Window; i++ {
+		}
+		blk.end = cache[i-1].pos0 + 1
+		blk.depths = means(cache[lasti:i])
+		blocks = append(blocks, blk)
+		lasti = i
+	}
+	return blocks
+}
+
 func aggregate(a *dargs, r region, out chan []block) {
 	cache := make([]site, 0, 2000)
 	blocks := make([]block, 0, 256)
 
-	cargs := append([]string{"depth", "-Q", strconv.Itoa(a.Q), "-d", strconv.Itoa(a.MaxCov), "-r", r.String()}, a.Bams...)
+	cargs := append([]string{"depth", "-q", "0", "-Q", strconv.Itoa(a.Q), "-d", strconv.Itoa(a.MaxCov), "-r", r.String()}, a.Bams...)
 	cmd := exec.Command("samtools", cargs...)
 	cmd.Stderr = os.Stderr
 	pipeout, err := cmd.StdoutPipe()
@@ -220,8 +238,9 @@ func aggregate(a *dargs, r region, out chan []block) {
 			cache = append(cache, s)
 		} else if len(cache) > 0 && s.pos0-(cache[len(cache)-1].pos0+1) > a.MaxSkip {
 			if len(cache) >= a.MinSize {
-				dps := means(cache)
-				blocks = append(blocks, block{chrom: a.Chrom, start: cache[0].pos0, end: cache[len(cache)-1].pos0 + 1, depths: dps})
+				blocks = append(blocks, splitBlocks(a.Chrom, cache, a)...)
+				//dps := means(cache)
+				//blocks = append(blocks, block{chrom: a.Chrom, start: cache[0].pos0, end: cache[len(cache)-1].pos0 + 1, depths: dps})
 			}
 			cache = cache[:0]
 			if suf {
@@ -230,8 +249,9 @@ func aggregate(a *dargs, r region, out chan []block) {
 		}
 	}
 	if len(cache) > 0 {
-		dps := means(cache)
-		blocks = append(blocks, block{chrom: a.Chrom, start: cache[0].pos0, end: cache[len(cache)-1].pos0 + 1, depths: dps})
+		//dps := means(cache)
+		//blocks = append(blocks, block{chrom: a.Chrom, start: cache[0].pos0, end: cache[len(cache)-1].pos0 + 1, depths: dps})
+		blocks = append(blocks, splitBlocks(a.Chrom, cache, a)...)
 		cache = cache[:0]
 	}
 	if err := cmd.Wait(); err != nil {
