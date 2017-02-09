@@ -3,7 +3,6 @@ package cnveval
 
 import (
 	"fmt"
-	"log"
 	"math"
 	"sort"
 )
@@ -24,7 +23,7 @@ type Truth struct {
 	End     int
 	Samples []string
 	CN      int
-	samples map[uint32]bool
+	used    map[string]bool
 }
 
 func (t Truth) String() string {
@@ -50,6 +49,36 @@ var (
 	Large  SC = math.MaxInt64
 )
 
+func (s SC) Order() int {
+	switch s {
+	case Small:
+		return 0
+	case Medium:
+		return 1
+	case Large:
+		return 2
+	case Any:
+		return 3
+	default:
+		panic(fmt.Sprintf("unknown size class: %d", s))
+	}
+}
+
+func (s SC) String() string {
+	switch s {
+	case Any:
+		return "all"
+	case Small:
+		return fmt.Sprintf("0-%d", Small)
+	case Medium:
+		return fmt.Sprintf("%d-%d", Small, Medium)
+	case Large:
+		return fmt.Sprintf(">=%d", Medium)
+	default:
+		panic(fmt.Sprintf("unknown size class: %d", s))
+	}
+}
+
 // TS indicates a sample and SizeClass
 type TS struct {
 	SizeClass SC
@@ -58,6 +87,11 @@ type TS struct {
 
 type Stat struct {
 	FP, FN, TP, TN int
+}
+
+func (s Stat) String() string {
+	return fmt.Sprintf("precision: %.4f (%-04d / (%-04d + %-04d)) recall: %.4f (%-04d / (%-04d + %-04d))", s.Precision(), s.TP, s.TP, s.FP,
+		s.Recall(), s.TP, s.TP, s.FN)
 }
 
 func (s Stat) Recall() float64 {
@@ -80,6 +114,23 @@ func (c CohortStats) TP(class SC) int {
 	return TP
 }
 
+func (c CohortStats) Tabulate() [4]Stat {
+	var stats [4]Stat
+	for cls, st := range c {
+		stats[cls.SizeClass.Order()].TP += st.TP
+		stats[cls.SizeClass.Order()].FP += st.FP
+		stats[cls.SizeClass.Order()].TN += st.TN
+		stats[cls.SizeClass.Order()].FN += st.FN
+	}
+	for _, cl := range []SC{Small, Medium, Large} {
+		stats[Any.Order()].TP += stats[cl.Order()].TP
+		stats[Any.Order()].FP += stats[cl.Order()].FP
+		stats[Any.Order()].TN += stats[cl.Order()].TN
+		stats[Any.Order()].FN += stats[cl.Order()].FN
+	}
+	return stats
+}
+
 func (c CohortStats) Precision(class SC) float64 {
 	var TP, FP float64
 	for cls, st := range c {
@@ -89,7 +140,7 @@ func (c CohortStats) Precision(class SC) float64 {
 		TP += float64(st.TP)
 		FP += float64(st.FP)
 	}
-	log.Println("TP, FP:", TP, FP)
+	//log.Println("TP, FP:", TP, FP)
 	return TP / (TP + FP)
 }
 
@@ -104,7 +155,7 @@ func (c CohortStats) Recall(class SC) float64 {
 		FP += float64(st.FP)
 		TN += float64(st.TN)
 	}
-	log.Println("TP, FN, FP, TN:", TP, FN, FP, TN)
+	//log.Println("TP, FN, FP, TN:", TP, FN, FP, TN)
 	return TP / (TP + FN)
 }
 
@@ -257,9 +308,16 @@ func updatePositive(stat map[TS]*Stat, truths []Truth, cnvs []CNV, po float64) {
 				break
 			}
 			if poverlap(cnv, t) >= po && sameCN(cnv.CN, t.CN) {
-				val.TP++
-				found = true
-				break
+				// used map make sure we don't double count cnvs from the sameCN
+				// sample that are subsets of the full truth interval.
+				if _, ok := t.used[cnv.Sample]; !ok {
+					val.TP++
+					found = true
+					if t.used == nil {
+						t.used = make(map[string]bool)
+					}
+					t.used[cnv.Sample] = true
+				}
 			}
 		}
 		if !found {
@@ -280,11 +338,11 @@ func sizeClass(t Truth) SC {
 }
 
 func sameCN(a, b int) bool {
-	if a > 4 {
-		a = 4
+	if a > 2 {
+		a = 3
 	}
-	if b > 4 {
-		b = 4
+	if b > 2 {
+		b = 3
 	}
 	return math.Abs(float64(a)-float64(b)) < 1
 }
@@ -307,10 +365,10 @@ func poverlap(a CNV, b Truth) float64 {
 	if a.Chrom != b.Chrom {
 		return 0
 	}
-	total := float64(a.End - a.Start + b.End - b.Start)
+	total := math.Min(float64(a.End-a.Start), float64(b.End-b.Start))
 	ovl := imin(a.End, b.End) - imax(a.Start, b.Start)
 	if ovl < 0 {
 		return 0
 	}
-	return float64(ovl*2) / total
+	return float64(ovl) / total
 }

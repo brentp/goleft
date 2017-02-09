@@ -15,9 +15,10 @@ import (
 )
 
 type cliargs struct {
-	MinOverlap float64 `arg:"-m,help:minimum overlap proportion for intervals to be considered as overlapping"`
-	Truth      string  `arg:"positional,required,help:bed file of truth-set"`
-	Test       string  `arg:"positional,required,help:bed file of test-set"`
+	MinOverlap   float64 `arg:"-m,help:minimum overlap proportion for intervals to be considered as overlapping"`
+	LimitSamples bool    `arg:"-s,help:only included sites in the truth-set that have matching samples in the test-set"`
+	Truth        string  `arg:"positional,required,help:bed file of truth-set"`
+	Test         string  `arg:"positional,required,help:bed file of test-set"`
 }
 
 func main() {
@@ -26,9 +27,16 @@ func main() {
 	if p := arg.MustParse(&cli); cli.MinOverlap > 1 || cli.MinOverlap <= 0 {
 		p.Fail("minoverlap must be between 0 and 1")
 	}
+	tcnvs := parseTruth(cli.Test, false, nil)
+	var samples map[string]bool
+	if cli.LimitSamples {
+		samples = make(map[string]bool)
+		for _, t := range tcnvs {
+			samples[t.Samples[0]] = true
+		}
+	}
 
-	truths := parseTruth(cli.Truth, true)
-	tcnvs := parseTruth(cli.Test, false)
+	truths := parseTruth(cli.Truth, true, samples)
 	cnvs := asCNV(tcnvs)
 	f, err := os.Create("x.cpu.pprof")
 	if err != nil {
@@ -38,7 +46,11 @@ func main() {
 	defer pprof.StopCPUProfile()
 
 	ch := cnveval.Evaluate(cnvs, truths, cli.MinOverlap)
-	fmt.Printf("precision: %.4f, recall: %.4f\n", ch.Precision(cnveval.Any), ch.Recall(cnveval.Any))
+	tabs := ch.Tabulate()
+	for _, cl := range []cnveval.SC{cnveval.Small, cnveval.Medium, cnveval.Large, cnveval.Any} {
+		t := tabs[cl.Order()]
+		fmt.Printf("size-class: %-12s | %s\n", cl, t)
+	}
 
 }
 
@@ -51,7 +63,7 @@ func asCNV(ts []cnveval.Truth) []cnveval.CNV {
 	return cnvs
 }
 
-func parseTruth(p string, cnt bool) []cnveval.Truth {
+func parseTruth(p string, cnt bool, samples map[string]bool) []cnveval.Truth {
 	truths := make([]cnveval.Truth, 0, 1000)
 	fh, err := xopen.Ropen(p)
 	if err != nil {
@@ -68,6 +80,19 @@ func parseTruth(p string, cnt bool) []cnveval.Truth {
 		}
 		if line[0] == '#' {
 			continue
+		}
+		t := parseLine(line)
+		if samples != nil {
+			found := false
+			for _, s := range t.Samples {
+				if _, ok := samples[s]; ok {
+					found = true
+					break
+				}
+			}
+			if !found {
+				continue
+			}
 		}
 		truths = append(truths, parseLine(line))
 		if cnt {
