@@ -60,6 +60,11 @@ type RowCentered struct {
 	centers  []float64
 }
 
+type ColCentered struct {
+	Centerer func([]float64) float64
+	centers  []float64
+}
+
 func (rc *RowCentered) Scale(a *mat64.Dense) {
 	r, _ := a.Dims()
 	if rc.centers == nil {
@@ -76,6 +81,24 @@ func (rc *RowCentered) Scale(a *mat64.Dense) {
 
 }
 
+func (cc *ColCentered) Scale(a *mat64.Dense) {
+	r, c := a.Dims()
+	if cc.centers == nil {
+		cc.centers = make([]float64, 0, c)
+	}
+	cc.centers = cc.centers[:0]
+	col := make([]float64, r)
+	for i := 0; i < c; i++ {
+		mat64.Col(col, i, a)
+		cc.centers = append(cc.centers, cc.Centerer(col))
+		for c := range col {
+			col[c] -= cc.centers[i]
+		}
+		a.SetCol(i, col)
+	}
+
+}
+
 func (rc *RowCentered) UnScale(a *mat64.Dense) {
 	r, _ := a.Dims()
 	for i := 0; i < r; i++ {
@@ -84,6 +107,19 @@ func (rc *RowCentered) UnScale(a *mat64.Dense) {
 		for j := range row {
 			row[j] += cnt
 		}
+	}
+}
+
+func (cc *ColCentered) UnScale(a *mat64.Dense) {
+	r, c := a.Dims()
+	col := make([]float64, r)
+	for i := 0; i < c; i++ {
+		mat64.Col(col, i, a)
+		cnt := cc.centers[i]
+		for j := range col {
+			col[j] += cnt
+		}
+		a.SetCol(i, col)
 	}
 }
 
@@ -97,33 +133,28 @@ func gmean(vs []float64) float64 {
 
 // Log2 implements Scaler interface to perform log2 transformation on depths.
 type Log2 struct {
-	RC *RowCentered
+	CC *ColCentered
 }
 
 // Scale converts from depths to log2s
 func (l *Log2) Scale(a *mat64.Dense) {
 	r, _ := a.Dims()
-	if l.RC == nil {
-		l.RC = &RowCentered{Centerer: gmean}
+	if l.CC == nil {
+		l.CC = &ColCentered{Centerer: gmean}
 	}
 	for i := 0; i < r; i++ {
 		row := a.RawRowView(i)
 		for c, d := range row {
-			if d > 0 {
-				row[c] = math.Log2(d)
-			} else {
-				// use -6 because much lower numbers screw the SVD scaling.
-				row[c] = -6
-			}
+			row[c] = math.Log2(1 + d)
 		}
 	}
-	l.RC.Scale(a)
+	l.CC.Scale(a)
 }
 
 // UnScale converts from log2s to depths
 func (l *Log2) UnScale(a *mat64.Dense) {
 	r, _ := a.Dims()
-	l.RC.UnScale(a)
+	l.CC.UnScale(a)
 	for i := 0; i < r; i++ {
 		row := a.RawRowView(i)
 		for c, d := range row {

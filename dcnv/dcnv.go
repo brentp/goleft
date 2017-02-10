@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"image/color"
 	"io"
 	"log"
 	"math"
@@ -15,6 +16,9 @@ import (
 	"github.com/brentp/goleft/emdepth"
 	"github.com/brentp/xopen"
 	"github.com/gonum/matrix/mat64"
+	"github.com/gonum/plot"
+	"github.com/gonum/plot/plotter"
+	"github.com/gonum/plot/vg"
 	"go4.org/sort"
 )
 
@@ -58,7 +62,14 @@ func mustAtof(a string) float64 {
 	return v
 }
 
-func (ivs *Intervals) addFromLine(l string, fa *faidx.Faidx) {
+func imin(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func (ivs *Intervals) addFromLine(l string, fa *faidx.Faidx, fp *faidx.FaPos) {
 	toks := strings.Split(l, "\t")
 	toks[len(toks)-1] = strings.TrimSpace(toks[len(toks)-1])
 
@@ -72,11 +83,16 @@ func (ivs *Intervals) addFromLine(l string, fa *faidx.Faidx) {
 	}
 	// subtract $n bases since GC before will afffect reads here.
 	last := len(ivs.Starts) - 1
-	st, err := fa.Stats(toks[0], int(ivs.Starts[last])-100, int(ivs.Ends[last])-100)
+	st, err := fa.Stats(toks[0], int(ivs.Starts[last]-5), int(ivs.Ends[last]+10))
+	fp.Start = int(ivs.Starts[last] - 25)
+	fp.End = int(ivs.Ends[last])
+	fa.Q(fp)
+
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 	}
 	ivs.GCs = append(ivs.GCs, st.GC)
+	ivs.SeqComplexity = append(ivs.SeqComplexity, 1-float64(fp.Duplicity()))
 }
 
 // SampleMedians gets the Median log2 values for each sample.
@@ -141,6 +157,68 @@ func Pipeliner(mat *mat64.Dense, fns ...MatFn) {
 	for _, fn := range fns {
 		fn(mat)
 	}
+}
+
+// A plotter plots the before and after a MatFn is Applied
+type Plotter struct {
+	Idxs []int
+}
+
+// Wrap will plot a line of Values from a mat64.Dense before and after calling fn.
+func (p *Plotter) Wrap(fn MatFn, Xs []float64, xlabel, ylabel, path string) MatFn {
+	if p.Idxs == nil {
+		p.Idxs = append(p.Idxs, 0)
+	}
+	pl, err := plot.New()
+	if err != nil {
+		panic(err)
+	}
+	pl.X.Label.Text = xlabel
+	pl.Y.Label.Text = ylabel
+
+	plotFn := func(mat *mat64.Dense, name string, color color.RGBA) {
+		r, _ := mat.Dims()
+		if Xs == nil {
+			log.Fatal("must specify xs")
+			Xs = make([]float64, r)
+			for i := 0; i < r; i++ {
+				Xs[i] = float64(i)
+			}
+		}
+
+		col := make([]float64, r)
+		for k, idx := range p.Idxs {
+			mat64.Col(col, idx, mat)
+			px := make(plotter.XYs, len(Xs))
+			for j, x := range Xs {
+				px[j].X = x
+				px[j].Y = col[j]
+			}
+			l, err := plotter.NewScatter(px)
+			if err != nil {
+				panic(err)
+			}
+
+			l.GlyphStyle.Color = color
+			l.GlyphStyle.Radius = vg.Length(vg.Points(1))
+			l.Color = color
+			pl.Add(l)
+			if k == 0 {
+				pl.Legend.Add(name, l)
+			}
+		}
+
+	}
+	wfn := func(mat *mat64.Dense) {
+		plotFn(mat, "before", color.RGBA{225, 0, 4, 255})
+		fn(mat)
+		plotFn(mat, "after", color.RGBA{4, 0, 225, 255})
+		if err := pl.Save(vg.Length(12)*vg.Inch, vg.Length(8)*vg.Inch, path); err != nil {
+			panic(err)
+		}
+
+	}
+	return wfn
 }
 
 // mean without the lowest and highest values.
@@ -235,9 +313,22 @@ func (ivs *Intervals) printCNVs(cnvs []*emdepth.CNV, samples []string) {
 			continue
 		}
 		sample := samples[cnv.SampleI]
-		fmt.Fprintf(os.Stdout, "%s\t%d\t%d\t%s\t%s\t%s\t%s\t%d\n", ivs.Chrom, cnv.Position[0].Start, cnv.Position[l].End,
-			sample, ijoin(cnv.CN), fjoin(cnv.Depth), fjoin(cnv.Log2FC), cnv.PSize)
+		cn := bestCN(cnv.CN)
+		if cn == 2 {
+			continue
+		}
+		fmt.Fprintf(os.Stdout, "%s\t%d\t%d\t%d\t%s\t%s\t%s\t%s\t%d\n", ivs.Chrom, cnv.Position[0].Start, cnv.Position[l].End,
+			cn, sample, ijoin(cnv.CN), fjoin(cnv.Depth), fjoin(cnv.Log2FC), cnv.PSize)
 	}
+}
+
+func bestCN(cns []int) int {
+	var m float64
+	for _, v := range cns {
+		m += float64(v)
+	}
+	m /= float64(len(cns))
+	return int(m + 0.5)
 }
 
 func (ivs *Intervals) ReadRegions(path string, fasta string) {
@@ -245,6 +336,8 @@ func (ivs *Intervals) ReadRegions(path string, fasta string) {
 	if err != nil {
 		panic(err)
 	}
+	fp := &faidx.FaPos{}
+
 	rdr, err := xopen.Ropen(path)
 	if err != nil {
 		panic(err)
@@ -264,9 +357,10 @@ func (ivs *Intervals) ReadRegions(path string, fasta string) {
 		}
 		if i == 0 || i == 1 {
 			ivs.Chrom = string(line[:strings.Index(line, "\t")])
+			fp.Chrom = ivs.Chrom
 		}
 		i++
-		ivs.addFromLine(line, fai)
+		ivs.addFromLine(line, fai, fp)
 	}
 	ns := len(ivs.Samples)
 	ivs.Depths = mat64.NewDense(len(ivs._depths)/ns, ns, ivs._depths)
@@ -296,52 +390,66 @@ func (ivs *Intervals) Write(n int) {
 
 func main() {
 
-	/*
-		f, err := os.Create("dcnv.cpu.pprof")
-		if err != nil {
-			panic(err)
-		}
-		pprof.StartCPUProfile(f)
-		defer pprof.StopCPUProfile()
-	*/
-
-	window := 13
 	bed := os.Args[1]
 	fasta := os.Args[2]
 	ivs := &Intervals{}
 	ivs.ReadRegions(bed, fasta)
 	fmt.Fprintln(os.Stderr, ivs.Samples)
-	_ = window
 
 	ivs.CorrectBySampleMedian()
 
 	db := debiaser.GeneralDebiaser{
 		Vals:   make([]float64, len(ivs.GCs)),
-		Window: window}
+		Window: 1}
+	copy(db.Vals, ivs.GCs)
 	zsc := &scalers.ZScore{}
 	l2 := &scalers.Log2{}
+	sc := l2
+	Pipeliner(ivs.Depths, sc.Scale)
+	pl := Plotter{Idxs: []int{5}}
+	_ = pl
+
+	db.Sort(ivs.Depths)
+	_, _ = zsc, l2
+
+	// Correct by GC
+	db.Window = 1
+	Pipeliner(ivs.Depths, db.Sort, pl.Wrap(db.Debias, db.Vals, "GC", "normalized depth", "gc.png"), db.Unsort)
+
 	// correct by Size
 	for i := 0; i < len(ivs.Ends); i++ {
 		db.Vals[i] = float64(ivs.Ends[i] - ivs.Starts[i])
 	}
-	Pipeliner(ivs.Depths, zsc.Scale, db.Sort, db.Debias, db.Unsort)
-	_, _ = zsc, l2
+	db.Window = 1
+	Pipeliner(ivs.Depths, db.Sort, pl.Wrap(db.Debias, db.Vals, "region-size", "normalized depth", "size.png"), db.Unsort)
 
-	// Correct by GC
-	copy(db.Vals, ivs.GCs)
-	Pipeliner(ivs.Depths, db.Sort, db.Debias, db.Unsort)
-
-	svd := debiaser.SVD{MinVariancePct: 5}
-	Pipeliner(ivs.Depths, svd.Debias, zsc.UnScale)
-
-	nsites, nsamples := ivs.Depths.Dims()
-	dps := make([]string, nsamples)
-	fmt.Printf("#chrom\tstart\tend\t%s\n", strings.Join(ivs.Samples, "\t"))
-	for i := 0; i < nsites; i++ {
-		iv := ivs.Depths.RawRowView(i)
-		for si := range dps {
-			dps[si] = fmt.Sprintf("%.2f", iv[si])
+	// correct by proximity to next.
+	/*
+		for i := 1; i < len(ivs.Ends); i++ {
+			db.Vals[i] = float64(ivs.Starts[i] - ivs.Ends[i-1])
 		}
-		fmt.Printf("%s\t%d\t%d\t%s\n", ivs.Chrom, ivs.Starts[i], ivs.Ends[i], strings.Join(dps, "\t"))
-	}
+		Pipeliner(ivs.Depths, db.Sort, pl.Wrap(db.Debias, db.Vals, "proximity", "normalized depth", "prox.png"), db.Unsort)
+	*/
+
+	// seq complexity
+	//copy(db.Vals, ivs.SeqComplexity)
+	//Pipeliner(ivs.Depths, db.Sort, pl.Wrap(db.Debias, db.Vals, "complexity", "depth", "complexity.png"), db.Unsort)
+
+	//svd := debiaser.SVD{MinVariancePct: 5}
+	//Pipeliner(ivs.Depths, svd.Debias)
+	sc.UnScale(ivs.Depths)
+
+	/*
+		fmt.Printf("#chrom\tstart\tend\t%s\n", strings.Join(ivs.Samples, "\t"))
+		nsites, nsamples := ivs.Depths.Dims()
+		dps := make([]string, nsamples)
+		for i := 0; i < nsites; i++ {
+			iv := ivs.Depths.RawRowView(i)
+			for si := range dps {
+				dps[si] = fmt.Sprintf("%.2f", iv[si])
+			}
+			fmt.Printf("%s\t%d\t%d\t%s\n", ivs.Chrom, ivs.Starts[i], ivs.Ends[i], strings.Join(dps, "\t"))
+		}*/
+	fmt.Println("#chrom\tstart\tend\tcn\tsample\tcns\tdepths\tl2s\tn-regions")
+	ivs.CallCopyNumbers()
 }

@@ -59,8 +59,15 @@ func (g *GeneralDebiaser) Sort(mat *mat64.Dense) {
 	r, c := mat.Dims()
 	g.setTmp(r, c)
 
+	changed := false
 	for ai, bi := range g.inds {
+		if ai != bi {
+			changed = true
+		}
 		g.tmp.SetRow(ai, mat.RawRowView(bi))
+	}
+	if !changed {
+		log.Println("WARNING: no change after sorting. This usually means .Vals is unset or same as previous run")
 	}
 	// copy g.tmp into mat
 	mat.Copy(g.tmp)
@@ -89,6 +96,8 @@ func (g *GeneralDebiaser) Unsort(mat *mat64.Dense) {
 func (g *GeneralDebiaser) Debias(mat *mat64.Dense) {
 	r, c := mat.Dims()
 	col := make([]float64, r)
+	ins := make([]float64, 0, 2000)
+	outs := make([]float64, 0, 2000)
 	for sampleI := 0; sampleI < c; sampleI++ {
 		mat64.Col(col, sampleI, mat)
 
@@ -96,15 +105,25 @@ func (g *GeneralDebiaser) Debias(mat *mat64.Dense) {
 		mid := (g.Window-1)/2 + 1
 		for i := 0; i < mid; i++ {
 			mm.Push(col[i])
+			if sampleI == 0 {
+				ins = append(ins, col[i])
+			}
 		}
 		for i := 0; i < mid; i++ {
 			col[i] -= mm.Median()
+			if sampleI == 0 {
+				outs = append(outs, col[i])
+			}
 		}
 
 		var i int
 		for i = mid; i < len(col)-mid; i++ {
 			mm.Push(col[i+mid])
 			col[i] -= mm.Median()
+			if sampleI == 0 {
+				outs = append(outs, col[i])
+				ins = append(ins, col[i])
+			}
 		}
 		for ; i < len(col); i++ {
 			col[i] -= mm.Median()
@@ -139,8 +158,7 @@ func (isvd *SVD) Debias(mat *mat64.Dense) {
 	for i := n; i < len(s); i++ {
 		sigma.Set(i, i, s[i])
 	}
-
-	mat.Product(u, sigma, v)
+	mat.Product(u, sigma, v.T())
 }
 
 func extractSVD(svd *mat64.SVD) (s []float64, u, v *mat64.Dense) {
