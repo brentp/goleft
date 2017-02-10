@@ -51,7 +51,6 @@ func main() {
 		t := tabs[cl.Order()]
 		fmt.Printf("size-class: %-12s | %s\n", cl, t)
 	}
-
 }
 
 func asCNV(ts []cnveval.Truth) []cnveval.CNV {
@@ -100,7 +99,9 @@ func parseTruth(p string, cnt bool, samples map[string]bool) []cnveval.Truth {
 		}
 	}
 	if cnt {
-		log.Printf("%d total cnvs (%d)", n, len(truths))
+		log.Printf("%d total cnvs in truth-set (%d)", n, len(truths))
+	} else {
+		log.Printf("cnvs in test-set (%d)", len(truths))
 	}
 	return truths
 }

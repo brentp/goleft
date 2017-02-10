@@ -9,11 +9,12 @@ import (
 
 // CNV indicates the region, sample and copy-number of a region.
 type CNV struct {
-	Chrom  string
-	Start  int
-	End    int
-	Sample string
-	CN     int
+	Chrom   string
+	Start   int
+	End     int
+	Sample  string
+	CN      int
+	counted bool
 }
 
 // Truth indicates the region, samples and copy-number for a truth-set.
@@ -233,8 +234,8 @@ func updateFP(stat map[TS]*Stat, others []Truth, cnvs []CNV, truths []Truth, po 
 	}
 
 	var i int
+	// others should not include CNVs from this sample.
 	for _, o := range others {
-		found := false
 		ts := TS{Sample: cnvs[0].Sample, SizeClass: sizeClass(o)}
 		val := stat[ts]
 		if val == nil {
@@ -247,36 +248,37 @@ func updateFP(stat map[TS]*Stat, others []Truth, cnvs []CNV, truths []Truth, po 
 		if i > 0 {
 			i--
 		}
-		for _, cnv := range cnvs[i:] {
+		tpfound := false
+		fpfound := false
+		found := false
+		// TODO: flip this cnvs loop with the others loop above because we need to have a value for every cnv.
+		for k, cnv := range cnvs[i:] {
 			if cnv.Chrom > o.Chrom || (o.Chrom == cnv.Chrom && cnv.Start > o.End) {
 				break
 			}
 			if poverlap(cnv, o) >= po && sameCN(cnv.CN, o.CN) {
+				fpfound = true
 				// we have a putative FP, but need to check if there's something else in the truth something
 				// that also fits this criteria to avoid incorrectly calling an FP.
-				tfound := false
 				for _, t := range truths {
 					if t.Chrom != cnv.Chrom {
 						continue
 					}
 					if poverlap(cnv, t) >= po && sameCN(cnv.CN, t.CN) {
-						tfound = true
+						tpfound = true
 						break
 					}
 
 				}
-				if !tfound {
-					val.FP++
-					found = true
-					break
-				}
 			}
-			if found {
-				break
+			// if here, then cnv didn't overlap something in the truth set.
+			if fpfound && !tpfound {
+				val.FP++
+				found = true
+				cnvs[i+k].counted = true
 			}
-
 		}
-		if !found {
+		if !(found || tpfound) {
 			val.TN++
 		}
 	}
@@ -303,7 +305,7 @@ func updatePositive(stat map[TS]*Stat, truths []Truth, cnvs []CNV, po float64) {
 		if i > 0 {
 			i--
 		}
-		for _, cnv := range cnvs[i:] {
+		for k, cnv := range cnvs[i:] {
 			if cnv.Chrom > t.Chrom || (t.Chrom == cnv.Chrom && cnv.Start > t.End) {
 				break
 			}
@@ -312,6 +314,7 @@ func updatePositive(stat map[TS]*Stat, truths []Truth, cnvs []CNV, po float64) {
 				// sample that are subsets of the full truth interval.
 				if _, ok := t.used[cnv.Sample]; !ok {
 					val.TP++
+					cnvs[i+k].counted = true
 					found = true
 					if t.used == nil {
 						t.used = make(map[string]bool)
@@ -322,6 +325,17 @@ func updatePositive(stat map[TS]*Stat, truths []Truth, cnvs []CNV, po float64) {
 		}
 		if !found {
 			val.FN++
+		}
+	}
+	for _, cnv := range cnvs {
+		if !cnv.counted {
+			ts := TS{Sample: cnv.Sample, SizeClass: sizeClass(Truth{Start: cnv.Start, End: cnv.End})}
+			val := stat[ts]
+			if val == nil {
+				val = &Stat{}
+				stat[ts] = val
+			}
+			val.FP++
 		}
 	}
 }
