@@ -358,7 +358,7 @@ func sameCN(a, b int) bool {
 	if b > 2 {
 		b = 3
 	}
-	return math.Abs(float64(a)-float64(b)) < 1
+	return a == b
 }
 
 func imin(a, b int) int {
