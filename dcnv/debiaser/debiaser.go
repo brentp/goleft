@@ -3,6 +3,7 @@ package debiaser
 import (
 	"fmt"
 	"log"
+	"sort"
 
 	"github.com/JaderDias/movingmedian"
 	"github.com/gonum/floats"
@@ -127,6 +128,49 @@ func (g *GeneralDebiaser) Debias(mat *mat64.Dense) {
 		}
 		for ; i < len(col); i++ {
 			col[i] -= mm.Median()
+		}
+		mat.SetCol(sampleI, col)
+	}
+}
+
+type ChunkDebiaser struct {
+	GeneralDebiaser
+	// ScoreWindow defines the range of Vals used per window.
+	// E.g. if this is 0.1 then all values from 0.25-0.35 will be normalized to the median of
+	// Depths occuring in that range.
+	ScoreWindow float64
+}
+
+func (cd *ChunkDebiaser) Debias(mat *mat64.Dense) {
+	if cd.ScoreWindow == 0 {
+		panic("must set ChunkDebiaser.ScoreWindow")
+	}
+	r, c := mat.Dims()
+	col := make([]float64, r)
+
+	slices := make([]int, 1, 100)
+	v0 := cd.Vals[0]
+	for i := 0; i < len(cd.Vals); i++ {
+		if cd.Vals[i]-v0 > cd.ScoreWindow {
+			v0 = cd.Vals[i]
+			slices = append(slices, i)
+		}
+	}
+	slices = append(slices, len(cd.Vals))
+	dpSubset := make([]float64, 0, len(cd.Vals))
+
+	for sampleI := 0; sampleI < c; sampleI++ {
+		mat64.Col(col, sampleI, mat)
+		for i := 1; i < len(slices); i++ {
+			si, ei := slices[i-1], slices[i]
+			dpSubset = dpSubset[:(ei - si)]
+			copy(dpSubset, col[si:ei])
+			sort.Float64s(dpSubset)
+			median := dpSubset[(ei-si)/2]
+
+			for j := si; j < ei; j++ {
+				col[j] /= median
+			}
 		}
 		mat.SetCol(sampleI, col)
 	}

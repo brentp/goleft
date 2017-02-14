@@ -36,6 +36,8 @@ type Intervals struct {
 	Depths  *mat64.Dense
 	_depths []float64
 
+	GCB *GcBounds
+
 	sampleMedians []float64
 	sampleScalars []float64
 	Samples       []string
@@ -69,30 +71,43 @@ func imin(a, b int) int {
 	return b
 }
 
+type GcBounds struct {
+	Min float64
+	Max float64
+}
+
 func (ivs *Intervals) addFromLine(l string, fa *faidx.Faidx, fp *faidx.FaPos) {
 	toks := strings.Split(l, "\t")
 	toks[len(toks)-1] = strings.TrimSpace(toks[len(toks)-1])
+	// subtract $n bases since GC before will afffect reads here.
+	s, e := mustAtoi(toks[1]), mustAtoi(toks[2])
+	st, err := fa.Stats(toks[0], int(s-250), int(e+250))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+	}
 
-	ivs.Starts = append(ivs.Starts, mustAtoi(toks[1]))
-	ivs.Ends = append(ivs.Ends, mustAtoi(toks[2]))
+	if ivs.GCB != nil && st.GC > ivs.GCB.Max || st.GC < ivs.GCB.Min {
+		return
+	}
+
+	ivs.Starts = append(ivs.Starts, s)
+	ivs.Ends = append(ivs.Ends, e)
+
+	/*
+		last := len(ivs.Starts) - 1
+		fp.Start = int(ivs.Starts[last] - 100)
+		fp.End = int(ivs.Ends[last] + 100)
+		fa.Q(fp)
+		//ivs.SeqComplexity = append(ivs.SeqComplexity, 1-float64(fp.Duplicity()))
+	*/
 
 	for c := 3; c < len(toks); c++ {
 		d := mustAtof(toks[c])
 		//d /= float64(iv.End - iv.Start)
 		ivs._depths = append(ivs._depths, d)
 	}
-	// subtract $n bases since GC before will afffect reads here.
-	last := len(ivs.Starts) - 1
-	st, err := fa.Stats(toks[0], int(ivs.Starts[last]-5), int(ivs.Ends[last]+10))
-	fp.Start = int(ivs.Starts[last] - 25)
-	fp.End = int(ivs.Ends[last])
-	fa.Q(fp)
 
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-	}
 	ivs.GCs = append(ivs.GCs, st.GC)
-	ivs.SeqComplexity = append(ivs.SeqComplexity, 1-float64(fp.Duplicity()))
 }
 
 // SampleMedians gets the Median log2 values for each sample.
@@ -127,13 +142,13 @@ func (ivs *Intervals) SampleScalars() []float64 {
 
 // CorrectBySampleMedian subtracts the sample median from each sample.
 func (ivs *Intervals) CorrectBySampleMedian() {
-	scalars := ivs.SampleScalars()
+	scalars := ivs.SampleMedians()
 	r, c := ivs.Depths.Dims()
 	mat := ivs.Depths
 	for i := 0; i < r; i++ {
 		row := mat.RawRowView(i)
 		for j := 0; j < c; j++ {
-			row[j] *= scalars[j]
+			row[j] /= scalars[j]
 		}
 	}
 }
@@ -262,14 +277,16 @@ func (ivs *Intervals) CallCopyNumbers() {
 	for i := 0; i < r; i++ {
 		row := ivs.Depths.RawRowView(i)
 		//fmt.Fprintf(os.Stdout, "%s\t%d\t%d\t%s\n", ivs.Chrom, iv.Start, iv.End, formatIV(iv))
-		if pLess(row, 7) > 0.5 {
-			nskip++
-			continue
-		}
-		if mean(row) < 15 {
-			nskip++
-			continue
-		}
+		/*
+			if pLess(row, 7) > 0.5 {
+				nskip++
+				continue
+			}
+			if mean(row) < 15 {
+				nskip++
+				continue
+			}
+		*/
 		for k, d := range row {
 			row32[k] = float32(d)
 		}
@@ -390,66 +407,47 @@ func (ivs *Intervals) Write(n int) {
 
 func main() {
 
+	/*
+		f, err := os.Create("dcnv.cpu.pprof")
+		if err != nil {
+			panic(err)
+		}
+		pprof.StartCPUProfile(f)
+		defer pprof.StopCPUProfile()
+	*/
+
 	bed := os.Args[1]
 	fasta := os.Args[2]
-	ivs := &Intervals{}
+	ivs := &Intervals{GCB: &GcBounds{Min: 0.25, Max: 0.75}}
+
 	ivs.ReadRegions(bed, fasta)
-	fmt.Fprintln(os.Stderr, ivs.Samples)
 
-	ivs.CorrectBySampleMedian()
+	//ivs.CorrectBySampleMedian()
 
-	db := debiaser.GeneralDebiaser{
-		Vals:   make([]float64, len(ivs.GCs)),
-		Window: 1}
+	//db := debiaser.GeneralDebiaser{}
+	db := debiaser.ChunkDebiaser{
+		ScoreWindow: 0.01}
+	db.Window = 1
+	db.Vals = make([]float64, len(ivs.GCs))
 	copy(db.Vals, ivs.GCs)
 	zsc := &scalers.ZScore{}
 	l2 := &scalers.Log2{}
 	sc := l2
-	Pipeliner(ivs.Depths, sc.Scale)
+	_ = sc
+	//Pipeliner(ivs.Depths, sc.Scale)
 	pl := Plotter{Idxs: []int{5}}
 	_ = pl
 
-	db.Sort(ivs.Depths)
 	_, _ = zsc, l2
+	//sc.Scale(ivs.Depths)
 
 	// Correct by GC
 	db.Window = 1
 	Pipeliner(ivs.Depths, db.Sort, pl.Wrap(db.Debias, db.Vals, "GC", "normalized depth", "gc.png"), db.Unsort)
-
-	// correct by Size
-	for i := 0; i < len(ivs.Ends); i++ {
-		db.Vals[i] = float64(ivs.Ends[i] - ivs.Starts[i])
-	}
-	db.Window = 1
-	Pipeliner(ivs.Depths, db.Sort, pl.Wrap(db.Debias, db.Vals, "region-size", "normalized depth", "size.png"), db.Unsort)
-
-	// correct by proximity to next.
-	/*
-		for i := 1; i < len(ivs.Ends); i++ {
-			db.Vals[i] = float64(ivs.Starts[i] - ivs.Ends[i-1])
-		}
-		Pipeliner(ivs.Depths, db.Sort, pl.Wrap(db.Debias, db.Vals, "proximity", "normalized depth", "prox.png"), db.Unsort)
-	*/
-
-	// seq complexity
 	//copy(db.Vals, ivs.SeqComplexity)
-	//Pipeliner(ivs.Depths, db.Sort, pl.Wrap(db.Debias, db.Vals, "complexity", "depth", "complexity.png"), db.Unsort)
+	//Pipeliner(ivs.Depths, db.Sort, pl.Wrap(db.Debias, db.Vals, "complexity", "normalized depth", "cpx.png"), db.Unsort)
+	//sc.UnScale(ivs.Depths)
 
-	//svd := debiaser.SVD{MinVariancePct: 5}
-	//Pipeliner(ivs.Depths, svd.Debias)
-	sc.UnScale(ivs.Depths)
-
-	/*
-		fmt.Printf("#chrom\tstart\tend\t%s\n", strings.Join(ivs.Samples, "\t"))
-		nsites, nsamples := ivs.Depths.Dims()
-		dps := make([]string, nsamples)
-		for i := 0; i < nsites; i++ {
-			iv := ivs.Depths.RawRowView(i)
-			for si := range dps {
-				dps[si] = fmt.Sprintf("%.2f", iv[si])
-			}
-			fmt.Printf("%s\t%d\t%d\t%s\n", ivs.Chrom, ivs.Starts[i], ivs.Ends[i], strings.Join(dps, "\t"))
-		}*/
 	fmt.Println("#chrom\tstart\tend\tcn\tsample\tcns\tdepths\tl2s\tn-regions")
 	ivs.CallCopyNumbers()
 }
