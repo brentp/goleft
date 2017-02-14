@@ -195,8 +195,8 @@ func EMDepth(depths []float32, p Position) *EMD {
 		}
 		// make CN 2 more likely by expanding the range between CN1 and CN3.
 		span := lambda[2] - lambda[1]
-		lambda[1] -= (span / 2.5)
-		lambda[3] += (span / 2.5)
+		lambda[1] -= (span / 1.5)
+		lambda[3] += (span / 1.5)
 		sumd, maxd = summaxdiff(lambda, lastCenters)
 	}
 	binPool.Put(binned)
