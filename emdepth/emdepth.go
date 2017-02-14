@@ -8,6 +8,7 @@
 package emdepth
 
 import (
+	"fmt"
 	"math"
 	"sort"
 	"sync"
@@ -102,6 +103,10 @@ func init() {
 type Position struct {
 	Start uint32
 	End   uint32
+}
+
+func (p *Position) String() string {
+	return fmt.Sprintf("%d:%d", p.Start, p.End)
 }
 
 // EMDepth returns a slice of integer copy-numbers (CNs) corresponding to the given normalized
@@ -203,6 +208,7 @@ type EMD struct {
 	Lambda   []float64
 	Depths   []float32
 	Position Position
+	_l2      []float64
 }
 
 // Same returns
@@ -240,10 +246,14 @@ func (e *EMD) Same(o *EMD) (non2 []int, changed []int, pct float64) {
 
 // Log2FC is the fold-change relative to copy-number 2.
 func (e *EMD) Log2FC() []float64 {
+	if e._l2 != nil {
+		return e._l2
+	}
 	m := make([]float64, 0, len(e.Depths))
 	for _, d := range e.Depths {
 		m = append(m, math.Log2(float64(d)/e.Lambda[2]))
 	}
+	e._l2 = m
 	return m
 }
 
@@ -311,6 +321,10 @@ type CNV struct {
 	PSize    int
 }
 
+func (c *CNV) String() string {
+	return fmt.Sprintf("%v  %v", c.Position, c.CN)
+}
+
 func (c *Cache) Add(e *EMD) []*CNV {
 	// TODO: here we check e.Position and eject anything that doesnt have and End with 3 * len(position).
 	if c.last == nil {
@@ -331,19 +345,24 @@ func (c *Cache) Add(e *EMD) []*CNV {
 
 func (c *Cache) Clear(p *Position) []*CNV {
 	if p == nil {
-		p = &Position{End: c.last.Position.End + 10000, Start: c.last.Position.Start + 10000}
+		if c.last == nil {
+			return nil
+		}
+		p = &Position{End: c.last.Position.End + 100000, Start: c.last.Position.Start + 100000}
 	}
 	cnvs := make([]*CNV, 0, 5)
 	keys := make([]int, len(c.cnvs))
-	L := p.End - p.Start
+	//L := p.End - p.Start
 	for si, emd := range c.cnvs {
 		// not a big enough gap yet.
-		if p.Start-emd[len(emd)-1].Position.End < 3*L {
+		if p.Start-emd[len(emd)-1].Position.End < 300000 {
 			continue
 		}
-		cnvs = append(cnvs, makecnvs(emd, si))
-		cnvs[len(cnvs)-1].PSize = len(c.cnvs)
-		keys = append(keys, si)
+		if putative := makecnvs(emd, si); putative != nil {
+			cnvs = append(cnvs, putative)
+			cnvs[len(cnvs)-1].PSize = len(c.cnvs)
+			keys = append(keys, si)
+		}
 	}
 	for _, key := range keys {
 		delete(c.cnvs, key)
@@ -355,15 +374,17 @@ func (c *Cache) Clear(p *Position) []*CNV {
 func makecnvs(es []*EMD, sampleI int) *CNV {
 	var cnv *CNV
 	// in here, we know we have adjacent calls from  same sample.
-	for i, es := range es {
+	var k int
+	for _, es := range es {
 		fc := es.Log2FC()[sampleI]
 		if fc > -0.5 && fc < 0.3 {
 			continue
 		}
 		cn := es.Type(es.Depths[sampleI])
-		if i == 0 {
+		if k == 0 {
 			cnv = &CNV{SampleI: sampleI, CN: []int{cn}, Depth: []float32{es.Depths[sampleI]},
 				Position: []Position{es.Position}, Log2FC: []float32{float32(fc)}}
+			k++
 			continue
 		}
 		cnv.CN = append(cnv.CN, cn)
