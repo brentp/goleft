@@ -39,6 +39,68 @@ type Index struct {
 	Slices [][]Slice
 }
 
+const TileWidth = 16384
+
+func (i *Index) Sizes() [][]int64 {
+
+	refs := make([][]int64, len(i.Slices))
+	for i, s := range i.Slices {
+		refs[i] = makeSizes(s)
+	}
+	return refs
+}
+
+func makeSizes(slices []Slice) []int64 {
+	// each slice may be hundreds of KB. This function splits those into 16KB chunks to match the
+	// bam index. If we have e.g. start, end, size: 10000, 30000, 100
+	// then we have to back fill from 0-10000
+	if len(slices) == 0 {
+		return nil
+	}
+	last := slices[len(slices)-1]
+	sizes := make([]int64, 0, (last.Start()+last.Span()+TileWidth)/TileWidth)
+	lastStart := int64(0)
+	lastVal := int64(0)
+	//unusedBytes := int32(0)
+
+	for _, sl := range slices {
+		// back fill gaps
+		for k := 0; lastStart+TileWidth <= sl.Start()-TileWidth; lastStart += TileWidth {
+			if k == 0 {
+				sizes = append(sizes, lastVal)
+				lastVal = 0
+			} else {
+				sizes = append(sizes, 0)
+			}
+			k++
+		}
+		overhang := TileWidth - (sl.Start() - lastStart)
+		if overhang < -TileWidth || overhang > TileWidth {
+			panic("logic error")
+		}
+		// 100000 is an arbitrary scalar to make sure we have enough resolution.
+		perBase := int64(100000 * float64(sl.SliceBytes()) / float64(int64(sl.Span())))
+
+		nTiles := int64(float64(sl.Span()) / float64(TileWidth))
+		if nTiles == 0 && sl.Start()-lastStart < TileWidth {
+			lastVal = perBase
+			continue
+		}
+
+		for i := 0; i < int(nTiles); i++ {
+			sizes = append(sizes, perBase)
+		}
+		cmp := int(sl.Start()+sl.Span()) / TileWidth
+		if len(sizes) > cmp || cmp < len(sizes)-1 {
+			panic("logic error")
+		}
+
+		lastStart += TileWidth * nTiles
+		lastVal = perBase
+	}
+	return sizes
+}
+
 func ReadIndex(r io.Reader) (*Index, error) {
 	b := bufio.NewReader(r)
 
