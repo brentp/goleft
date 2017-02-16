@@ -41,7 +41,7 @@ type referenceStats struct {
 	Unmapped uint64
 }
 
-func getRefs(idx *bam.Index) [][]int64 {
+func getSizes(idx *bam.Index) [][]int64 {
 	refs := reflect.ValueOf(*idx).FieldByName("idx").FieldByName("Refs")
 	ptr := unsafe.Pointer(refs.Pointer())
 
@@ -49,9 +49,16 @@ func getRefs(idx *bam.Index) [][]int64 {
 	// save some memory.
 	m := make([][]int64, len(ret))
 	for i, r := range ret {
-		m[i] = make([]int64, len(r.Intervals))
-		for k, iv := range r.Intervals {
-			m[i][k] = vOffset(iv)
+		if len(r.Intervals) < 2 {
+			m[i] = make([]int64, 0)
+			continue
+		}
+		m[i] = make([]int64, len(r.Intervals)-1)
+		for k, iv := range r.Intervals[1:] {
+			m[i][k] = vOffset(iv) - vOffset(r.Intervals[k])
+			if m[i][k] < 0 {
+				panic("expected positive change in vOffset")
+			}
 		}
 		r.Bins, r.Intervals = nil, nil
 	}

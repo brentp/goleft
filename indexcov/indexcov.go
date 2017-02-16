@@ -20,6 +20,7 @@ import (
 	chartjs "github.com/brentp/go-chartjs"
 	"github.com/brentp/go-chartjs/types"
 	"github.com/brentp/goleft"
+	"github.com/brentp/goleft/indexcov/crai"
 	"github.com/gonum/floats"
 	"github.com/gonum/matrix/mat64"
 	"github.com/gonum/stat"
@@ -43,11 +44,12 @@ var MaxCN = float32(6)
 // Index wraps a bam.Index to cache calculated values.
 type Index struct {
 	*bam.Index
+	crai *crai.Index
 	path string
 
 	//mu                *sync.RWMutex
 	medianSizePerTile float64
-	refs              [][]int64
+	sizes             [][]int64
 }
 
 func vOffset(o bgzf.Offset) int64 {
@@ -56,18 +58,23 @@ func vOffset(o bgzf.Offset) int64 {
 
 // init sets the medianSizePerTile
 func (x *Index) init() {
-	x.refs = getRefs(x.Index)
-	x.Index = nil
+	if x.Index != nil {
+		x.sizes = getSizes(x.Index)
+		x.Index = nil
+	} else {
+		/*
+			if x.crai == nil {
+				panic("expected either cram or bam index")
+			}
+			x.sizes = x.crai.Refs()
+			x.crai = nil
+		*/
+	}
 
 	// sizes is used to get the median.
 	sizes := make([]int64, 0, 16384)
-	for k := 0; k < len(x.refs); k++ {
-		if len(x.refs[k]) < 2 {
-			continue
-		}
-		for i, iv := range x.refs[k][1:] {
-			sizes = append(sizes, iv-x.refs[k][i])
-		}
+	for k := 0; k < len(x.sizes); k++ {
+		sizes = append(sizes, x.sizes[k]...)
 	}
 	if len(sizes) < 1 {
 		log.Fatalf("indexcov: no usable chromsomes in bam: %s", x.path)
@@ -88,23 +95,16 @@ func (x *Index) init() {
 
 // NormalizedDepth returns a list of numbers for the normalized depth of the given region.
 // Values are scaled to have a mean of 1. If end is 0, the full chromosome is returned.
-func (x *Index) NormalizedDepth(refID int, start int, end int) []float32 {
+func (x *Index) NormalizedDepth(refID int) []float32 {
 
 	if x.medianSizePerTile == 0.0 {
 		x.init()
 	}
-	ref := x.refs[refID]
+	ref := x.sizes[refID]
 
-	si, ei := start/TileWidth, end/TileWidth
-	if end == 0 || ei >= len(ref) {
-		ei = len(ref) - 1
-	}
-	if ei <= si {
-		return nil
-	}
-	depths := make([]float32, 0, ei-si)
-	for i, o := range ref[si:ei] {
-		depths = append(depths, float32(float64(ref[si+i+1]-o)/x.medianSizePerTile))
+	depths := make([]float32, 0, len(ref))
+	for i, o := range ref {
+		depths = append(depths, float32(float64(o)/x.medianSizePerTile))
 		if depths[i] > MaxCN {
 			depths[i] = MaxCN
 		}
@@ -389,7 +389,7 @@ func run(refs []*sam.Reference, idxs []*Index, names []string, base string) (map
 				pca8[k] = make([]uint8, 0, 2e5)
 				offs[k] = &counter{}
 			}
-			depths[k] = idx.NormalizedDepth(ref.ID(), 0, ref.Len())
+			depths[k] = idx.NormalizedDepth(ref.ID())
 			if len(depths[k]) > longest {
 				longesti = k
 				longest = len(depths[k])
