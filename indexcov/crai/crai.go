@@ -11,7 +11,9 @@ import (
 // note: for index cov, just need alnStart, alnSpan and sliceLen
 // will need to scale sliceLen by 16384/alnSpan and then artifically partition
 // into 16KB chunks?
-type slice struct {
+
+// Slice holds the index information for a particular cram slice
+type Slice struct {
 	alnStart int64
 	alnSpan  int64
 	// Container start byte offset in the file
@@ -21,22 +23,26 @@ type slice struct {
 	sliceLen   int32
 }
 
-func (s slice) Start() int64 {
+func (s Slice) Start() int64 {
 	return s.alnStart
 }
 
-func (s slice) SliceBytes() int32 {
+func (s Slice) SliceBytes() int32 {
 	return s.sliceLen
 }
 
+func (s Slice) Span() int64 {
+	return s.alnSpan
+}
+
 type Index struct {
-	slices [][]slice
+	Slices [][]Slice
 }
 
 func ReadIndex(r io.Reader) (*Index, error) {
 	b := bufio.NewReader(r)
 
-	idx := &Index{slices: make([][]slice, 0, 2)}
+	idx := &Index{Slices: make([][]Slice, 0, 2)}
 	iline := 1
 
 	for line, err := b.ReadString('\n'); err == nil; line, err = b.ReadString('\n') {
@@ -49,11 +55,11 @@ func ReadIndex(r io.Reader) (*Index, error) {
 		if err != nil {
 			return nil, fmt.Errorf("crai: unable to parse seqID (%s) at line %d", parts[0], line)
 		}
-		for i := len(idx.slices); i <= si; i++ {
-			idx.slices = append(idx.slices, make([]slice, 0, 16))
+		for i := len(idx.Slices); i <= si; i++ {
+			idx.Slices = append(idx.Slices, make([]Slice, 0, 16))
 		}
 
-		sl := slice{}
+		sl := Slice{}
 		if alnStart, err := strconv.Atoi(parts[1]); err != nil {
 			return nil, fmt.Errorf("crai: unable to parse alignment start (%s) at line %d", parts[1], iline)
 		} else {
@@ -83,7 +89,7 @@ func ReadIndex(r io.Reader) (*Index, error) {
 		} else {
 			sl.sliceLen = int32(sliceLen)
 		}
-		idx.slices[si] = append(idx.slices[si], sl)
+		idx.Slices[si] = append(idx.Slices[si], sl)
 
 		iline++
 	}
