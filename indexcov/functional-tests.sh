@@ -35,7 +35,6 @@ export -f check_nobams
 run check_no_bams ./goleft_test indexcov -d /tmp/tt
 assert_exit_code 255
 assert_in_stderr "expected at least 1 bam"
-assert_equal $(num_colcounts /tmp/tt/tt-indexcov.ped) 1
 
 
 get sample_name_0001.bam
@@ -53,7 +52,6 @@ get sample_biogo_e_0001.bam
 run check_issue17 ./goleft_test indexcov -d /tmp/tt sample_biogo_e_0001.bam
 assert_exit_code 1
 assert_in_stderr "no usable chromsomes in bam"
-assert_equal $(num_colcounts /tmp/tt/tt-indexcov.ped) 1
 
 run check_sex_warning ./goleft_test indexcov --sex chrX,chrY -d /tmp/tt sample_name_0001.bam
 assert_exit_code 1
@@ -85,10 +83,10 @@ assert_equal $(num_colcounts /tmp/tt/tt-indexcov.ped) 1
 
 
 if [[ ! -e NA21144.mapped.ILLUMINA.bwa.GIH.low_coverage.20130415.bam.cram.crai ]]; then
-    wget ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/phase3/data/NA21144/alignment/NA21144.mapped.ILLUMINA.bwa.GIH.low_coverage.20130415.bam.cram.crai
+    wget -q ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/phase3/data/NA21144/alignment/NA21144.mapped.ILLUMINA.bwa.GIH.low_coverage.20130415.bam.cram.crai
 fi
 if [[ ! -e human_g1k_v37.fasta.fai ]]; then
-    wget ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/technical/reference/human_g1k_v37.fasta.fai
+    wget -q ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/technical/reference/human_g1k_v37.fasta.fai
 fi
 
 run check_crai ./goleft_test indexcov --fai human_g1k_v37.fasta.fai -d /tmp/1kg NA21144.mapped.ILLUMINA.bwa.GIH.low_coverage.20130415.bam.cram.crai

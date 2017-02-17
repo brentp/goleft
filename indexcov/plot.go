@@ -100,10 +100,17 @@ func plotDepths(depths [][]float32, samples []string, chrom string, base string,
 		return err
 	}
 
+	w := 0.4
+	if len(depths) > 30 {
+		w = 0.3
+	}
+	if len(depths) > 50 {
+		w = 0.2
+	}
 	for i, depth := range depths {
 		xys := asValues(depth, 16384)
 		c := randomColor(i)
-		dataset := chartjs.Dataset{Data: xys, Label: samples[i], Fill: chartjs.False, PointRadius: 0, BorderWidth: 0.5,
+		dataset := chartjs.Dataset{Data: xys, Label: samples[i], Fill: chartjs.False, PointRadius: 0, BorderWidth: w,
 			BorderColor: c, BackgroundColor: c, SteppedLine: chartjs.True, PointHitRadius: 6}
 		dataset.XAxisID = xa
 		dataset.YAxisID = ya
@@ -354,6 +361,9 @@ func asPng(path string, chart chartjs.Chart, wInches float64, hInches float64) {
 		c := color.RGBA(*ds.BorderColor)
 		c.A = 255
 		l.LineStyle.Width = vg.Points(0.8)
+		if len(chart.Data.Datasets) > 30 {
+			l.LineStyle.Width = vg.Points(0.65)
+		}
 
 		l.Color = c
 		p.Add(l)

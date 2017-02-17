@@ -64,7 +64,7 @@ func main() {
 
 	args.minSamples = int(0.5 + args.MinSamples*float64(len(args.Bams)))
 	for _, b := range args.Bams {
-		nm, err := indexcov.GetShortName(b)
+		nm, err := indexcov.GetShortName(b, false)
 		if err != nil {
 			panic(fmt.Sprintf("%s: %s", b, err))
 		}
