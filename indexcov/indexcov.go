@@ -2,6 +2,7 @@ package indexcov
 
 import (
 	"bufio"
+	"compress/gzip"
 	"fmt"
 	"html/template"
 	"io"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	arg "github.com/alexflint/go-arg"
+	"github.com/biogo/biogo/io/seqio/fai"
 	"github.com/biogo/hts/bam"
 	"github.com/biogo/hts/bgzf"
 	"github.com/biogo/hts/sam"
@@ -34,7 +36,8 @@ var cli = &struct {
 	IncludeGL bool     `arg:"-e,help:plot GL chromosomes like: GL000201.1 which are not plotted by default"`
 	Sex       string   `arg:"-X,help:comma delimited names of the sex chromosome(s) used to infer sex; The first will be used to populate the sex column in a ped file."`
 	Chrom     string   `arg:"-c,help:optional chromosome to extract depth. default is entire genome."`
-	Bam       []string `arg:"positional,required,help:bam(s) for which to estimate coverage"`
+	Fai       string   `arg:"-f,help:fasta index file. Required when crais are used."`
+	Bam       []string `arg:"positional,required,help:bam(s) or crais for which to estimate coverage"`
 	sex       []string `arg:"-"`
 }{Sex: "X,Y"}
 
@@ -62,13 +65,8 @@ func (x *Index) init() {
 		x.sizes = getSizes(x.Index)
 		x.Index = nil
 	} else {
-		/*
-			if x.crai == nil {
-				panic("expected either cram or bam index")
-			}
-			x.sizes = x.crai.Refs()
-			x.crai = nil
-		*/
+		x.sizes = x.crai.Sizes()
+		x.crai = nil
 	}
 
 	// sizes is used to get the median.
@@ -169,27 +167,29 @@ func getRef(b *bam.Reader, chrom string) *sam.Reference {
 	return nil
 }
 
-func GetShortName(b string) (string, error) {
+func GetShortName(b string, isCrai bool) (string, error) {
 
-	fh, err := os.Open(b)
-	if err != nil {
-		return "", err
-	}
-	defer fh.Close()
-	br, err := bam.NewReader(fh, 1)
-	if err != nil {
-		return "", err
-	}
-	defer br.Close()
-	m := make(map[string]bool)
-	for _, rg := range br.Header().RGs() {
-		m[rg.Get(sam.Tag([2]byte{'S', 'M'}))] = true
-	}
-	if len(m) > 1 {
-		return "", fmt.Errorf("bam reagroup: more than one RG for %s", b)
-	}
-	for sm := range m {
-		return sm, nil
+	if !isCrai {
+		fh, err := os.Open(b)
+		if err != nil {
+			return "", err
+		}
+		defer fh.Close()
+		br, err := bam.NewReader(fh, 1)
+		if err != nil {
+			return "", err
+		}
+		defer br.Close()
+		m := make(map[string]bool)
+		for _, rg := range br.Header().RGs() {
+			m[rg.Get(sam.Tag([2]byte{'S', 'M'}))] = true
+		}
+		if len(m) > 1 {
+			return "", fmt.Errorf("bam reagroup: more than one RG for %s", b)
+		}
+		for sm := range m {
+			return sm, nil
+		}
 	}
 	vs := strings.Split(b, "/")
 	v := vs[len(vs)-1]
@@ -225,26 +225,55 @@ func getDirectory(path string) (bool, error) {
 	return fi.IsDir(), nil
 }
 
-// Main is called from the goleft dispatcher
-func Main() {
+func getReferences() []*sam.Reference {
 
-	chartjs.XFloatFormat = "%.0f"
-	p := arg.MustParse(cli)
-	if len(cli.Bam) == 0 {
-		p.Fail(fmt.Sprintf("indexcov: expected at least 1 bam: %s", os.Args))
-	}
-	log.Println(cli.Sex)
-	if len(cli.Sex) > 0 {
-		cli.sex = strings.Split(strings.TrimSpace(cli.Sex), ",")
-	}
+	if cli.Fai != "" {
+		f, err := os.Open(cli.Fai)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error opening fai: %s. Is is present?\n", cli.Fai)
+			panic(err)
+		}
+		idx, err := fai.ReadFrom(f)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error opening fai: %s. are you sure this is a valid fasta index?\n", cli.Fai)
+			panic(err)
+		}
+		recs := make([]fai.Record, 0, len(idx))
+		for _, rec := range idx {
+			recs = append(recs, rec)
+		}
+		// we have to manually set the private id so we sort by start and then reflect it.
+		sort.Slice(recs, func(i, j int) bool { return recs[i].Start < recs[j].Start })
+		refs := make([]*sam.Reference, 0, len(idx))
+		for _, rec := range recs {
+			if cli.Chrom != "" && rec.Name != cli.Chrom {
+				continue
+			}
+			ref, err := sam.NewReference(rec.Name, "", "", rec.Length, nil, nil)
+			if err != nil {
+				panic(err)
+			}
+			// add to the header so the id gets set.
+			refs = append(refs, ref)
+		}
+		if len(refs) == 0 {
+			if cli.Chrom != "" {
+				log.Printf("ERROR: didn't find %s in %s", cli.Chrom, cli.Fai)
 
-	if exists, err := getDirectory(cli.Directory); err != nil || !exists {
-		log.Fatalf("indexcov: error creating specified directory: %s, %s", cli.Directory, err)
+			}
+			panic(fmt.Sprintf("ERROR: didn't find any usable chromosomes in %s", cli.Fai))
+		}
+		h, err := sam.NewHeader(nil, refs)
+		if err != nil {
+			panic(err)
+		}
+		return h.Refs()
 	}
 
 	rdr, err := os.Open(cli.Bam[0])
 	if err != nil {
-		log.Println(cli.Bam[0])
+		log.Println("ERROR: since no .fai was specified, expected input to be a list of bams")
+		log.Printf("ERROR: got, e.g. %s", cli.Bam[0])
 		panic(err)
 	}
 	brdr, err := bam.NewReader(rdr, 2)
@@ -261,6 +290,28 @@ func Main() {
 	if refs == nil {
 		panic(fmt.Sprintf("indexcov: chromosome: %s not found", cli.Chrom))
 	}
+	return refs
+}
+
+// Main is called from the goleft dispatcher
+func Main() {
+
+	chartjs.XFloatFormat = "%.0f"
+	p := arg.MustParse(cli)
+	if len(cli.Bam) == 0 {
+		p.Fail(fmt.Sprintf("indexcov: expected at least 1 bam/bai/crai: %s", os.Args))
+	}
+	log.Println(cli.Sex)
+	if len(cli.Sex) > 0 {
+		cli.sex = strings.Split(strings.TrimSpace(cli.Sex), ",")
+	}
+
+	if exists, err := getDirectory(cli.Directory); err != nil || !exists {
+		log.Fatalf("indexcov: error creating specified directory: %s, %s", cli.Directory, err)
+	}
+
+	// the lengths and names of references from bams or fasta
+	refs := getReferences()
 
 	names := make([]string, len(cli.Bam))
 	idxs := make([]*Index, len(cli.Bam))
@@ -302,10 +353,36 @@ type rdi struct {
 func readIndex(r rdi) (*Index, string, int) {
 	b := r.bamPath
 
-	rdr, err := os.Open(b + ".bai")
+	if strings.HasSuffix(b, ".crai") {
+		f, err := os.Open(b)
+		if err != nil {
+			panic(err)
+		}
+		gz, err := gzip.NewReader(f)
+		if err != nil {
+			panic(err)
+		}
+		cr, err := crai.ReadIndex(gz)
+		if err != nil {
+			panic(err)
+		}
+		idx := &Index{crai: cr, path: b}
+		idx.init()
+		nm, err := GetShortName(b, true)
+		if err != nil {
+			panic(err)
+		}
+		return idx, nm, r.i
+	}
+
+	suf := ".bai"
+	if strings.HasSuffix(b, ".bai") {
+		suf = ""
+	}
+	rdr, err := os.Open(b + suf)
 	if err != nil {
 		var terr error
-		rdr, terr = os.Open(b[:(len(b)-4)] + ".bai")
+		rdr, terr = os.Open(b[:(len(b)-4)] + suf)
 		if terr != nil {
 			panic(err)
 		}
@@ -317,7 +394,7 @@ func readIndex(r rdi) (*Index, string, int) {
 	}
 	idx := &Index{Index: dx, path: b}
 	idx.init()
-	nm, err := GetShortName(b)
+	nm, err := GetShortName(b, false)
 	if err != nil {
 		panic(err)
 	}
@@ -499,7 +576,7 @@ func pca(pca8 [][]uint8, samples []string) (*mat64.Dense, []chartjs.Chart, strin
 	floats.Scale(1/floats.Sum(vars), vars)
 	if len(vars) < k {
 		k = len(vars)
-		log.Printf("got: %d, principal components", len(vars))
+		log.Printf("got: %d principal components", len(vars))
 		if k < 3 {
 			log.Printf("indexcov: %d principal components, not plotting", k)
 			return nil, nil, ""
@@ -544,8 +621,12 @@ func writeIndex(sexes map[string][]float64, counts []*counter, keys []string, sa
 		hdr[i] = "CN" + k
 	}
 	hdr = append(hdr, []string{"bins.out", "bins.lo", "bins.hi", "bins.in", "slope", "p.out"}...)
+	var c int
 	if pcs != nil {
-		hdr = append(hdr, "PC1\tPC2\tPC3\tPC4\tPC5")
+		_, c = pcs.Dims()
+		for i := 0; i < 5 && i < c; i++ {
+			hdr = append(hdr, fmt.Sprintf("PC%d", i+1))
+		}
 	}
 
 	fmt.Fprintf(f, "#family_id\tsample_id\tpaternal_id\tmaternal_id\tsex\tphenotype\t%s\n", strings.Join(hdr, "\t"))
@@ -576,13 +657,8 @@ func writeIndex(sexes map[string][]float64, counts []*counter, keys []string, sa
 			fmt.Sprintf("%.3f", slopes[i]),
 			fmt.Sprintf("%.2f", float64(cnt.out)/float64(cnt.in)),
 		}...)
-		if pcs != nil {
-			s = append(s,
-				fmt.Sprintf("%.2f", pcs.At(i, 0)),
-				fmt.Sprintf("%.2f", pcs.At(i, 1)),
-				fmt.Sprintf("%.2f", pcs.At(i, 2)),
-				fmt.Sprintf("%.2f", pcs.At(i, 3)),
-				fmt.Sprintf("%.2f", pcs.At(i, 4)))
+		for j := 0; j < c && j < 5; j++ {
+			s = append(s, fmt.Sprintf("%.2f", pcs.At(i, j)))
 		}
 
 		fmt.Fprintln(f, strings.Join(s, "\t"))

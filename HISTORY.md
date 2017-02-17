@@ -1,5 +1,10 @@
-v0.1.13 (development)
-=====================
+v0.1.14 (development)
+=======
++ `indexcov`: speed and memory improvements
++ `indexcov`: support crai
+
+v0.1.13
+=======
 + `covmed`: better coverage estimate by scaling by dup|qcfail|secondary.
 + `covmed`: report 5th and 95th percentile of insert size.
 + `indexcov`: make index.html even when no sex chromosomes are present.

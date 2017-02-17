@@ -4,6 +4,9 @@
 -->
 # goleft
 
+[![Build Status](https://travis-ci.org/brentp/goleft.svg)](https://travis-ci.org/brentp/goleft)
+
+
 goleft is a collection of bioinformatics tools written in
 [go](https://gitub.com/golang/go) distributed together
 as a single binary under a liberal (MIT) license.

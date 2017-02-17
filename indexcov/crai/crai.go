@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"log"
 	"strconv"
 	"strings"
 )
@@ -42,7 +43,6 @@ type Index struct {
 const TileWidth = 16384
 
 func (i *Index) Sizes() [][]int64 {
-
 	refs := make([][]int64, len(i.Slices))
 	for i, s := range i.Slices {
 		refs[i] = makeSizes(s)
@@ -50,6 +50,9 @@ func (i *Index) Sizes() [][]int64 {
 	return refs
 }
 
+// estimate the sizes (in arbitrary units of 16KB blocks from the cram index.
+// the index has arbitrary slice sizes so this function interpolates the 16KB
+// blocks.
 func makeSizes(slices []Slice) []int64 {
 	// each slice may be hundreds of KB. This function splits those into 16KB chunks to match the
 	// bam index. If we have e.g. start, end, size: 10000, 30000, 100
@@ -65,7 +68,7 @@ func makeSizes(slices []Slice) []int64 {
 
 	for _, sl := range slices {
 		// back fill gaps
-		for k := 0; lastStart+TileWidth <= sl.Start()-TileWidth; lastStart += TileWidth {
+		for k := 0; lastStart <= sl.Start()-TileWidth; lastStart += TileWidth {
 			if k == 0 {
 				sizes = append(sizes, lastVal)
 				lastVal = 0
@@ -74,8 +77,9 @@ func makeSizes(slices []Slice) []int64 {
 			}
 			k++
 		}
-		overhang := TileWidth - (sl.Start() - lastStart)
+		overhang := (sl.Start() - lastStart)
 		if overhang < -TileWidth || overhang > TileWidth {
+			log.Println(overhang, TileWidth)
 			panic("logic error")
 		}
 		// 100000 is an arbitrary scalar to make sure we have enough resolution.
@@ -91,7 +95,8 @@ func makeSizes(slices []Slice) []int64 {
 			sizes = append(sizes, perBase)
 		}
 		cmp := int(sl.Start()+sl.Span()) / TileWidth
-		if len(sizes) > cmp || cmp < len(sizes)-1 {
+		if len(sizes) > cmp+1 || cmp < len(sizes)-1 {
+			log.Println(len(sizes), cmp)
 			panic("logic error")
 		}
 
@@ -110,12 +115,12 @@ func ReadIndex(r io.Reader) (*Index, error) {
 	for line, err := b.ReadString('\n'); err == nil; line, err = b.ReadString('\n') {
 		parts := strings.Split(strings.TrimSpace(line), "\t")
 		if len(parts) != 6 {
-			return nil, fmt.Errorf("crai: expected 6 fields in index, got %d", len(parts))
+			return nil, fmt.Errorf("crai: expected 6 fields in index, got %d at line %d", len(parts), iline)
 		}
 
 		si, err := strconv.Atoi(parts[0])
 		if err != nil {
-			return nil, fmt.Errorf("crai: unable to parse seqID (%s) at line %d", parts[0], line)
+			return nil, fmt.Errorf("crai: unable to parse seqID (%s) at line %d", parts[0], iline)
 		}
 		for i := len(idx.Slices); i <= si; i++ {
 			idx.Slices = append(idx.Slices, make([]Slice, 0, 16))

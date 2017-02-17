@@ -1,0 +1,17 @@
+language: go
+
+os:
+  - linux
+
+go:
+  - 1.5
+  - 1.6
+  - 1.7
+  - 1.8
+
+before_install:
+  - cd indexcov && go get ./... && cd ..
+  - cd depth && go get ./... && cd ..
+script:
+  - cd indexcov && bash functional-test.sh && cd ..
+  - cd depth && bash functional-test.sh && cd ..

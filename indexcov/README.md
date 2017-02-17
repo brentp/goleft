@@ -1,7 +1,7 @@
 indexcov
 ========
 
-Quickly estimate coverage from a *whole-genome* bam index. 
+Quickly estimate coverage from a *whole-genome* bam or [**cram**](#CRAM) index. 
 A bam index has 16KB resolution so that's what this gives, but it provides what appears to be a high-quality 
 coverage estimate in seconds per genome.
 
@@ -10,7 +10,7 @@ This is useful as a quick QC to get coverage values across the genome.
 
 In our tests, we can **estimate depth across a 60X genomes for 30 samples in 30 seconds**.
 
-Interactive HTML plots of depth are output for each chromosome. Live examples of the interactive output are available [here](http://indexcov.s3-website-us-east-1.amazonaws.com/)
+Interactive HTML plots of depth are output for each chromosome. **Live examples of the interactive output are available [here](http://indexcov.s3-website-us-east-1.amazonaws.com/)**
 
 Usage
 =====
@@ -49,6 +49,22 @@ Here we can see that one sample has much lower coverage than the rest, and we ca
 Finally, `indexcov` will output a `$prefix-indexcov-bins.html` file with a point per sample. Samples with high
 values on the y-axis have very uneven coverage (this will affect SV calling). Samples with high values on There
 x-axis have many missing bins (likely truncated bam files).
+
+<a name="CRAM"></a> CRAM
+========================
+
+CRAM indexes are supported. Since there is not a full CRAM parser available in go yet, `indexcov` uses only
+the .crai files and requires a `.fasta.fai` to be sent via `--fai` so that it knows the chromosome names around
+lengths. The sample names are inferred from the file names. crai resolution is often much less than 100KB (compared to)
+16KB for the bam index, but it is sufficient to find large-scale differences in coverage.
+
+Example usage with cram looks like:
+
+```
+goleft indexcov -d output/ --fai h human_g1k_v37.fasta.fai /path/to/*.crai
+```
+
+**note** that the .fai (not the fasta) is required and that the files are .crai (not cram).
 
 How It Works
 ============
