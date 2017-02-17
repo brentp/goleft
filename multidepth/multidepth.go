@@ -58,11 +58,15 @@ func main() {
 	hdr := make([]string, 1, len(args.Bams)+1)
 	hdr[0] = "#chrom\tstart\tend"
 
+	if len(args.Bams) > 50 {
+		chunkSize /= 5
+	}
+
 	args.minSamples = int(0.5 + args.MinSamples*float64(len(args.Bams)))
 	for _, b := range args.Bams {
 		nm, err := indexcov.GetShortName(b)
 		if err != nil {
-			panic(err)
+			panic(fmt.Sprintf("%s: %s", b, err))
 		}
 		hdr = append(hdr, nm)
 	}
@@ -98,6 +102,7 @@ func writeOut(ch chan []block) *sync.WaitGroup {
 				stdout.WriteString(bl.String())
 				stdout.WriteByte('\n')
 			}
+			stdout.Flush()
 		}
 		stdout.Flush()
 		wg.Done()
@@ -106,7 +111,7 @@ func writeOut(ch chan []block) *sync.WaitGroup {
 
 }
 
-const chunkSize = 5000000
+var chunkSize = 5000000
 
 type region struct {
 	chrom string
@@ -269,9 +274,10 @@ func means(sites []site) []string {
 			dps[i] += float64(d) / 1000.
 		}
 	}
+	l := sites[len(sites)-1].pos0 - sites[0].pos0 + 1
 	sdps := make([]string, len(dps))
 	for i, d := range dps {
-		sdps[i] = fmt.Sprintf("%.2f", d/float64(len(sites))*1000)
+		sdps[i] = fmt.Sprintf("%.2f", d/float64(l)*1000)
 	}
 	return sdps
 }
