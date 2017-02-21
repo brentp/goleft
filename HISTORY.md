@@ -2,6 +2,7 @@ v0.1.14 (development)
 =======
 + `indexcov`: speed and memory improvements
 + `indexcov`: support crai
++ `indexcov`: prettier plot and labels for pngs.
 
 v0.1.13
 =======

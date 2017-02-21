@@ -8,6 +8,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"strings"
 
 	chartjs "github.com/brentp/go-chartjs"
 	"github.com/brentp/go-chartjs/types"
@@ -368,7 +369,55 @@ func asPng(path string, chart chartjs.Chart, wInches float64, hInches float64) {
 		l.Color = c
 		p.Add(l)
 	}
+	data := chart.Data.Datasets[0].Data.(*vs)
+	xs := data.Xs()
+	// check if we are in a depth plot
+	if xs[len(xs)-1] > 3 {
+		p.Y.Tick.Marker = ydticks{}
+		p.X.Tick.Marker = xdticks{}
+	}
+
 	if err := p.Save(vg.Length(wInches)*vg.Inch, vg.Length(hInches)*vg.Inch, path); err != nil {
 		panic(err)
 	}
+}
+
+type ydticks struct{}
+type xdticks struct{}
+
+func (ydticks) Ticks(min, max float64) []plot.Tick {
+	tks := make([]plot.Tick, 5)
+	for i := 0; i < 5; i++ {
+		v := float64(i) * 0.5
+		tks[i] = plot.Tick{Value: v, Label: fmt.Sprintf("%.1f", v)}
+	}
+	return tks
+}
+
+func (xdticks) Ticks(min, max float64) []plot.Tick {
+	otks := plot.DefaultTicks{}.Ticks(min, max)
+	tks := make([]plot.Tick, 0, 5)
+	for i, t := range otks {
+		if t.Label == "" {
+			continue
+		}
+		tks = append(tks, t)
+		tks[i].Label = makeMillions(t.Value)
+	}
+	return tks
+}
+
+func makeMillions(v float64) string {
+	var lbl string
+	if v > 2000000 {
+		lbl = fmt.Sprintf("%.1fMB", v/1000000)
+	} else if v > 10000 {
+		lbl = fmt.Sprintf("%.1fKB", v/1000)
+	} else {
+		lbl = fmt.Sprintf("%.1f", v)
+	}
+	if strings.HasSuffix(lbl, ".0MB") {
+		lbl = lbl[:len(lbl)-4] + "MB"
+	}
+	return lbl
 }
