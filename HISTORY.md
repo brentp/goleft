@@ -1,8 +1,9 @@
 v0.1.14 (development)
 =======
-+ `indexcov`: speed and memory improvements
-+ `indexcov`: support crai
++ `indexcov`: speed and memory improvements.
++ `indexcov`: support crai.
 + `indexcov`: prettier plot and labels for pngs.
++ `indexcov`: bin plot shows proportions rather than total numbers.
 
 v0.1.13
 =======

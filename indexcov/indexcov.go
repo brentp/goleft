@@ -727,7 +727,7 @@ func GetCN(depths [][]float32) []float64 {
 			med := float64(float32(Ploidy) * tmp[int(float64(len(tmp))*0.5)])
 			meds = append(meds, med)
 		} else {
-			meds = append(meds, -1)
+			meds = append(meds, -0.1)
 		}
 	}
 	return meds

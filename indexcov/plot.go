@@ -141,27 +141,43 @@ func plotBins(counts []*counter, samples []string) (chartjs.Chart, string) {
 	c := &types.RGBA{R: 110, G: 250, B: 59, A: 240}
 	chart := chartjs.Chart{}
 	xa, err := chart.AddXAxis(chartjs.Axis{Type: chartjs.Linear, Position: chartjs.Bottom, ScaleLabel: &chartjs.ScaleLabel{FontSize: 16,
-		LabelString: "total bins with depth < 0.15",
-		Display:     chartjs.True}})
+		LabelString: "proportion of bins with depth < 0.15",
+		Display:     chartjs.True},
+		Tick: &chartjs.Tick{Min: 0.0001}})
 	if err != nil {
 		panic(err)
 	}
 
 	ya, err := chart.AddYAxis(chartjs.Axis{Type: chartjs.Linear, Position: chartjs.Left, ScaleLabel: &chartjs.ScaleLabel{FontSize: 16,
-		LabelString: "total bins with depth outside of (0.85, 1.15)",
-		Display:     chartjs.True}})
+		LabelString: "proportion of bins with depth outside of (0.85, 1.15)",
+		Display:     chartjs.True},
+		Tick: &chartjs.Tick{Min: 0.000001}})
 
 	if err != nil {
 		panic(err)
 	}
 	xys := &vs{xs: make([]float64, len(counts)), ys: make([]float64, len(counts))}
+	min, max := float64(1000000), float64(0)
+
 	for i, c := range counts {
-		xys.xs[i] = float64(c.low)
-		xys.ys[i] = float64(c.out)
+		tot := float64(c.in + c.out)
+		xys.xs[i] = float64(c.low) / tot
+		if xys.xs[i] > max {
+			max = xys.xs[i]
+		}
+		if xys.xs[i] < min {
+			min = xys.xs[i]
+		}
+		xys.ys[i] = float64(c.out) / tot
 	}
+	rng := max - min
+	chart.Options.Scales.XAxes[0].Tick.Min = min - 0.1*rng
+	chart.Options.Scales.XAxes[0].Tick.Max = max + 0.1*rng
 	dataset := chartjs.Dataset{Data: xys, Label: "samples", Fill: chartjs.False, PointHoverRadius: 6,
 		PointRadius: 4, BorderWidth: 0, BorderColor: &types.RGBA{R: 150, G: 150, B: 150, A: 150},
 		PointBackgroundColor: c, BackgroundColor: c, ShowLine: chartjs.False, PointHitRadius: 6}
+	dataset.XFloatFormat = "%.5f"
+	dataset.YFloatFormat = "%.3f"
 	dataset.XAxisID = xa
 	dataset.YAxisID = ya
 	chart.AddDataset(dataset)
@@ -182,7 +198,6 @@ func plotBins(counts []*counter, samples []string) (chartjs.Chart, string) {
         return out.join(",")
     }`, sjson)
 	return chart, jsfunc
-
 }
 
 func plotPCA(mat *mat64.Dense, samples []string, vars []float64) ([]chartjs.Chart, string) {
