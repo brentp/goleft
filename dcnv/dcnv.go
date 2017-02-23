@@ -142,13 +142,13 @@ func (ivs *Intervals) SampleScalars() []float64 {
 
 // CorrectBySampleMedian subtracts the sample median from each sample.
 func (ivs *Intervals) CorrectBySampleMedian() {
-	scalars := ivs.SampleMedians()
+	scalars := ivs.SampleScalars()
 	r, c := ivs.Depths.Dims()
 	mat := ivs.Depths
 	for i := 0; i < r; i++ {
 		row := mat.RawRowView(i)
 		for j := 0; j < c; j++ {
-			row[j] /= scalars[j]
+			row[j] *= scalars[j]
 		}
 	}
 }
@@ -294,6 +294,7 @@ func (ivs *Intervals) CallCopyNumbers() {
 		em := emdepth.EMDepth(row32, emdepth.Position{Start: ivs.Starts[i], End: ivs.Ends[i]})
 		cnvs := cache.Add(em)
 		ivs.printCNVs(cnvs, samples)
+		//fmt.Fprintln(os.Stderr, row32, em.CN())
 	}
 
 	ivs.printCNVs(cache.Clear(nil), samples)
@@ -302,7 +303,7 @@ func (ivs *Intervals) CallCopyNumbers() {
 	//fmt.Fprintf(os.Stdout, "%s\t%d\t%d\t%s\t%s\n", ivs.Chrom, last.Start, last.End, formatCns(emdepth.EMDepth(last.AdjustedDepths)), formatFloats(last.AdjustedDepths))
 }
 
-const MinSize = 500
+const MinSize = 1500
 
 func (ivs *Intervals) printCNVs(cnvs []*emdepth.CNV, samples []string) {
 	if len(cnvs) == 0 {
@@ -335,14 +336,21 @@ func (ivs *Intervals) printCNVs(cnvs []*emdepth.CNV, samples []string) {
 			continue
 		}
 		fmt.Fprintf(os.Stdout, "%s\t%d\t%d\t%d\t%s\t%s\t%s\t%s\t%d\n", ivs.Chrom, cnv.Position[0].Start, cnv.Position[l].End,
-			cn, sample, ijoin(cnv.CN), fjoin(cnv.Depth), fjoin(cnv.Log2FC), cnv.PSize)
+			cn, sample, ijoin(cnv.CN), fjoin(cnv.Depth), cnv.PSize)
 	}
 }
 
 func bestCN(cns []int) int {
 	var m float64
+	n2 := 0
 	for _, v := range cns {
 		m += float64(v)
+		if v == 2 {
+			n2++
+		}
+	}
+	if float64(n2)/float64(len(cns)) > 0.25 {
+		return 2
 	}
 	m /= float64(len(cns))
 	return int(m + 0.5)
@@ -422,11 +430,11 @@ func main() {
 
 	ivs.ReadRegions(bed, fasta)
 
-	//ivs.CorrectBySampleMedian()
+	ivs.CorrectBySampleMedian()
 
-	//db := debiaser.GeneralDebiaser{}
-	db := debiaser.ChunkDebiaser{
-		ScoreWindow: 0.01}
+	db := debiaser.GeneralDebiaser{}
+	//db := debiaser.ChunkDebiaser{
+	//		ScoreWindow: 0.01}
 	db.Window = 1
 	db.Vals = make([]float64, len(ivs.GCs))
 	copy(db.Vals, ivs.GCs)
@@ -434,20 +442,34 @@ func main() {
 	l2 := &scalers.Log2{}
 	sc := l2
 	_ = sc
-	//Pipeliner(ivs.Depths, sc.Scale)
 	pl := Plotter{Idxs: []int{5}}
 	_ = pl
 
 	_, _ = zsc, l2
-	//sc.Scale(ivs.Depths)
+	sc.Scale(ivs.Depths)
 
 	// Correct by GC
 	db.Window = 1
 	Pipeliner(ivs.Depths, db.Sort, pl.Wrap(db.Debias, db.Vals, "GC", "normalized depth", "gc.png"), db.Unsort)
 	//copy(db.Vals, ivs.SeqComplexity)
 	//Pipeliner(ivs.Depths, db.Sort, pl.Wrap(db.Debias, db.Vals, "complexity", "normalized depth", "cpx.png"), db.Unsort)
-	//sc.UnScale(ivs.Depths)
 
-	fmt.Println("#chrom\tstart\tend\tcn\tsample\tcns\tdepths\tl2s\tn-regions")
+	sc.UnScale(ivs.Depths)
+	fmt.Println("#chrom\tstart\tend\tcn\tsample\tcns\tdepths\tn-regions")
 	ivs.CallCopyNumbers()
+
+	nsites, nsamples := ivs.Depths.Dims()
+	dps := make([]string, nsamples)
+	fdp, err := os.Create("depth.bed")
+	if err != nil {
+		panic(err)
+	}
+	fmt.Fprintf(fdp, "#chrom\tstart\tend\t%s\n", strings.Join(ivs.Samples, "\t"))
+	for i := 0; i < nsites; i++ {
+		iv := ivs.Depths.RawRowView(i)
+		for si := range dps {
+			dps[si] = fmt.Sprintf("%.2f", iv[si])
+		}
+		fmt.Fprintf(fdp, "%s\t%d\t%d\t%s\n", ivs.Chrom, ivs.Starts[i], ivs.Ends[i], strings.Join(dps, "\t"))
+	}
 }
