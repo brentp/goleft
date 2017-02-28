@@ -395,6 +395,16 @@ func asPng(path string, chart chartjs.Chart, wInches float64, hInches float64) {
 	if err := p.Save(vg.Length(wInches)*vg.Inch, vg.Length(hInches)*vg.Inch, path); err != nil {
 		panic(err)
 	}
+	// Set INDEXCOV_FMT env variable to also get .eps and .svg
+	if fmt := os.Getenv("INDEXCOV_FMT"); fmt != "" {
+		if fmt != "svg" {
+			fmt = "eps"
+		}
+		l := len(path) - 3
+		if err := p.Save(vg.Length(wInches)*vg.Inch, vg.Length(hInches)*vg.Inch, path[:l]+fmt); err != nil {
+			panic(err)
+		}
+	}
 }
 
 type ydticks struct{}

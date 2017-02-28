@@ -90,6 +90,7 @@ assert_exit_code 0
 assert_in_stderr "index.html for overview"
 assert_equal $(num_colcounts /tmp/1kg/1kg-indexcov.ped) 1
 
+export INDEXCOV_FMT=svg
 run check_cohort ./goleft_test indexcov -d /tmp/tt samples/*.bam
 assert_exit_code 0
 assert_equal $(num_colcounts /tmp/tt/tt-indexcov.ped) 1
