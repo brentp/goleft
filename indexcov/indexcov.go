@@ -34,7 +34,7 @@ var Ploidy = 2
 var cli = &struct {
 	Directory string   `arg:"-d,required,help:directory for output files"`
 	IncludeGL bool     `arg:"-e,help:plot GL chromosomes like: GL000201.1 which are not plotted by default"`
-	Sex       string   `arg:"-X,help:comma delimited names of the sex chromosome(s) used to infer sex; The first will be used to populate the sex column in a ped file."`
+	Sex       string   `arg:"-X,help:comma delimited names of the sex chromosome(s) used to infer sex. Set to '' if no sex chromosomes are present."`
 	Chrom     string   `arg:"-c,help:optional chromosome to extract depth. default is entire genome."`
 	Fai       string   `arg:"-f,help:fasta index file. Required when crais are used."`
 	Bam       []string `arg:"positional,required,help:bam(s) or crais for which to estimate coverage"`
