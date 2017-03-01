@@ -4,6 +4,7 @@ v0.1.14 (development)
 + `indexcov`: support crai.
 + `indexcov`: prettier plot and labels for pngs.
 + `indexcov`: bin plot shows proportions rather than total numbers.
++ `indexcov`: better messages and docs for `--sex` argument.
 
 v0.1.13
 =======

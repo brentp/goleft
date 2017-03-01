@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -301,7 +302,6 @@ func Main() {
 	if len(cli.Bam) == 0 {
 		p.Fail(fmt.Sprintf("indexcov: expected at least 1 bam/bai/crai: %s", os.Args))
 	}
-	log.Println(cli.Sex)
 	if len(cli.Sex) > 0 {
 		cli.sex = strings.Split(strings.TrimSpace(cli.Sex), ",")
 	}
@@ -547,13 +547,24 @@ func updateSlopes(rocs [][]float32, scalar float32, slopes []float32) {
 	}
 }
 
+func keys(o map[string][]float64) []string {
+	skeys := make([]string, 0, len(o))
+	for k := range o {
+		skeys = append(skeys, k)
+	}
+	return skeys
+}
+
 func checkSexes(obs map[string][]float64, exp []string) {
 	if len(obs) != len(exp) {
-		msg := fmt.Sprintf("indexcov: expected %d sex chromosomes, found: %d", len(exp), len(obs))
-		if len(obs) == 0 {
-			log.Fatal(msg + " (FATAL)")
+		msg := fmt.Sprintf("indexcov: expected %d sex chromosomes, found: %d.", len(exp), len(obs))
+		msg += fmt.Sprintf("\nyou can set the expected with --sex '%s'", strings.Join(keys(obs), ","))
+		// if it found no sex chromosomes *and* it was not the default, then error.
+		// but it it was the default, it's just a warning.
+		if len(obs) == 0 && !reflect.DeepEqual(exp, []string{"X", "Y"}) {
+			log.Fatal("(FATAL) " + msg)
 		}
-		log.Println(msg + " (WARNING)")
+		fmt.Fprintln(os.Stderr, "(WARNING) "+msg)
 	}
 }
 
