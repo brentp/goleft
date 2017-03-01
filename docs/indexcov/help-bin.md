@@ -11,7 +11,7 @@ This plot shows:
 These relatively simple metrics are quite effective in finding problematic samples.
 
 samples that fall:
-+ to the left of the plot have many regions with low or missing coverage.
++ to the right of the plot have many regions with low or missing coverage.
 + high on the plot have many regions outside of the expected coverage interval.
 
 The former of those may be due to truncated bam files or other missing data.
