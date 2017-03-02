@@ -56,6 +56,11 @@ type Index struct {
 	sizes             [][]int64
 }
 
+// Sizes returns the size of each block in slices of chromosomes.
+func (i *Index) Sizes() [][]int64 {
+	return i.sizes
+}
+
 func vOffset(o bgzf.Offset) int64 {
 	return o.File<<16 | int64(o.Block)
 }
@@ -346,6 +351,12 @@ func Main() {
 type rdi struct {
 	bamPath string
 	i       int
+}
+
+// ReadIndex returns an Index pointer from the specified bam or crai path.
+func ReadIndex(path string) *Index {
+	i, _, _ := readIndex(rdi{path, 0})
+	return i
 }
 
 // get an initialized index from a bamPath.
