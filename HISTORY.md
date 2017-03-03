@@ -5,6 +5,7 @@ v0.1.14 (development)
 + `indexcov`: prettier plot and labels for pngs.
 + `indexcov`: bin plot shows proportions rather than total numbers.
 + `indexcov`: better messages and docs for `--sex` argument.
++ `indexsplit`: new tool to generate regions for parallelization (using indexes)
 
 v0.1.13
 =======

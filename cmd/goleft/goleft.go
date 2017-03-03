@@ -12,6 +12,7 @@ import (
 	"github.com/brentp/goleft/depth"
 	"github.com/brentp/goleft/depthwed"
 	"github.com/brentp/goleft/indexcov"
+	"github.com/brentp/goleft/indexsplit"
 )
 
 type progPair struct {
@@ -20,10 +21,11 @@ type progPair struct {
 }
 
 var progs = map[string]progPair{
-	"depth":    progPair{"parallelize calls to samtools in user-defined windows", depth.Main},
-	"depthwed": progPair{"matricize output from depth to n-sites * n-samples", depthwed.Main},
-	"covmed":   progPair{"calculate median coverage on a bam by sampling", covmed.Main},
-	"indexcov": progPair{"quick coverage estimate using only the bam index", indexcov.Main},
+	"depth":      progPair{"parallelize calls to samtools in user-defined windows", depth.Main},
+	"depthwed":   progPair{"matricize output from depth to n-sites * n-samples", depthwed.Main},
+	"covmed":     progPair{"calculate median coverage on a bam by sampling", covmed.Main},
+	"indexcov":   progPair{"quick coverage estimate using only the bam index", indexcov.Main},
+	"indexsplit": progPair{"create regions of even coverage across bams/crams", indexsplit.Main},
 }
 
 func printProgs() {

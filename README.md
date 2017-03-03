@@ -34,4 +34,4 @@ go install github.com/brentp/goleft/cmd/goleft
 + [depth](https://github.com/brentp/goleft/tree/master/depth#depth)    : parallelize calls to samtools in user-defined windows
 + depthwed : matricize output from depth to n-sites * n-samples
 + [indexcov](https://github.com/brentp/goleft/tree/master/indexcov#indexcov) : quick coverage estimate using only the bam index
-
++ [indexsplit](https://github.com/brentp/goleft/tree/master/indexsplit#indexsplit) : generate regions of even data across a cohort (for parallelization)
