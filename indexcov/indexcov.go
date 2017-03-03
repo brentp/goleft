@@ -231,55 +231,56 @@ func getDirectory(path string) (bool, error) {
 	return fi.IsDir(), nil
 }
 
-func getReferences() []*sam.Reference {
-
-	if cli.Fai != "" {
-		f, err := os.Open(cli.Fai)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error opening fai: %s. Is is present?\n", cli.Fai)
-			panic(err)
+// ReadFai returns a slit of references from the fai path.
+// If chrom is "" all chromosomes are returned.
+func ReadFai(path string, chrom string) []*sam.Reference {
+	f, err := os.Open(path)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error opening fai: %s. Is is present?\n", path)
+		panic(err)
+	}
+	idx, err := fai.ReadFrom(f)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error opening fai: %s. are you sure this i  s a valid fasta index?\n", path)
+		panic(err)
+	}
+	recs := make([]fai.Record, 0, len(idx))
+	for _, rec := range idx {
+		recs = append(recs, rec)
+	}
+	sort.Slice(recs, func(i, j int) bool { return recs[i].Start < recs[j].Start })
+	refs := make([]*sam.Reference, 0, len(idx))
+	for _, rec := range recs {
+		if chrom != "" && rec.Name != chrom {
+			continue
 		}
-		idx, err := fai.ReadFrom(f)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error opening fai: %s. are you sure this is a valid fasta index?\n", cli.Fai)
-			panic(err)
-		}
-		recs := make([]fai.Record, 0, len(idx))
-		for _, rec := range idx {
-			recs = append(recs, rec)
-		}
-		// we have to manually set the private id so we sort by start and then reflect it.
-		sort.Slice(recs, func(i, j int) bool { return recs[i].Start < recs[j].Start })
-		refs := make([]*sam.Reference, 0, len(idx))
-		for _, rec := range recs {
-			if cli.Chrom != "" && rec.Name != cli.Chrom {
-				continue
-			}
-			ref, err := sam.NewReference(rec.Name, "", "", rec.Length, nil, nil)
-			if err != nil {
-				panic(err)
-			}
-			// add to the header so the id gets set.
-			refs = append(refs, ref)
-		}
-		if len(refs) == 0 {
-			if cli.Chrom != "" {
-				log.Printf("ERROR: didn't find %s in %s", cli.Chrom, cli.Fai)
-
-			}
-			panic(fmt.Sprintf("ERROR: didn't find any usable chromosomes in %s", cli.Fai))
-		}
-		h, err := sam.NewHeader(nil, refs)
+		ref, err := sam.NewReference(rec.Name, "", "", rec.Length, nil, nil)
 		if err != nil {
 			panic(err)
 		}
-		return h.Refs()
+		// add to the header so the id gets set.
+		refs = append(refs, ref)
 	}
 
-	rdr, err := os.Open(cli.Bam[0])
+	if len(refs) == 0 {
+		if chrom != "" {
+			log.Printf("ERROR: didn't find %s in %s", chrom, path)
+
+		}
+		panic(fmt.Sprintf("ERROR: didn't find any usable chromosomes in %s", path))
+	}
+	h, err := sam.NewHeader(nil, refs)
+	if err != nil {
+		panic(err)
+	}
+	return h.Refs()
+}
+
+func RefsFromBam(path string, chrom string) []*sam.Reference {
+	rdr, err := os.Open(path)
 	if err != nil {
 		log.Println("ERROR: since no .fai was specified, expected input to be a list of bams")
-		log.Printf("ERROR: got, e.g. %s", cli.Bam[0])
+		log.Printf("ERROR: got, e.g. %s", path)
 		panic(err)
 	}
 	brdr, err := bam.NewReader(rdr, 2)
@@ -288,15 +289,26 @@ func getReferences() []*sam.Reference {
 	}
 
 	refs := brdr.Header().Refs()
-	if cli.Chrom != "" {
-		refs = append(refs, getRef(brdr, cli.Chrom))
+	if chrom != "" {
+		refs = append(refs, getRef(brdr, chrom))
 	}
 	rdr.Close()
 	brdr.Close()
 	if refs == nil {
-		panic(fmt.Sprintf("indexcov: chromosome: %s not found", cli.Chrom))
+		panic(fmt.Sprintf("indexcov: chromosome: %s not found", chrom))
 	}
 	return refs
+}
+
+func getReferences() []*sam.Reference {
+	if strings.HasSuffix(cli.Bam[0], ".bam") {
+		return RefsFromBam(cli.Bam[0], cli.Chrom)
+	}
+
+	if cli.Fai != "" {
+		return ReadFai(cli.Fai, cli.Chrom)
+	}
+	return RefsFromBam(cli.Bam[0], cli.Chrom)
 }
 
 // Main is called from the goleft dispatcher
