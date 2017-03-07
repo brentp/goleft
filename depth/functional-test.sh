@@ -3,7 +3,7 @@
 test -e ssshtest || wget -q https://raw.githubusercontent.com/ryanlayer/ssshtest/master/ssshtest
 
 . ssshtest
-set -eo pipefail
+set -uo pipefail
 
 go build -o goleft ../cmd/goleft/goleft.go
 

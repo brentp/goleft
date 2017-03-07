@@ -9,6 +9,9 @@ go:
 before_install:
   - cd indexcov && go get ./... ; cd ..
   - cd depth && go get ./... ; cd ..
+  - sudo apt-get -qq update
+  - sudo apt-get install -y bedtools samtools
 script:
   - cd indexcov && bash functional-tests.sh ; cd ..
-#- cd depth && bash functional-test.sh ; cd ..
+  - cd depth && bash functional-test.sh ; cd ..
+  - cd indexsplit && bash functional-tests.sh; cd ..
