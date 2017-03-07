@@ -19,7 +19,7 @@ import (
 
 type cliargs struct {
 	N       int      `arg:"-n,required,help:number of regions to split to."`
-	Fai     string   `arg:"--fai,required,help:fasta index file."`
+	Fai     string   `arg:"--fai,help:fasta index file."`
 	Indexes []string `arg:"positional,required,help:bai's/crais to use for splitting genome."`
 }
 
@@ -48,14 +48,15 @@ func getPercents(sizes [][]float64) ([]float64, []float64) {
 
 // Chunk is a region of the genome create by `Split`.
 type Chunk struct {
-	Chrom string
-	Start int
-	End   int
-	Sum   float64 // amount of data in this Chunk
+	Chrom  string
+	Start  int
+	End    int
+	Sum    float64 // amount of data in this Chunk
+	Splits int     // number of splits
 }
 
 func (c Chunk) String() string {
-	return fmt.Sprintf("%s\t%d\t%d\t%.2f", c.Chrom, c.Start, c.End, c.Sum)
+	return fmt.Sprintf("%s\t%d\t%d\t%.2f\t%d", c.Chrom, c.Start, c.End, c.Sum, c.Splits)
 }
 
 // Split takes paths of bams or crais and generates `N` `Chunks`
@@ -71,7 +72,8 @@ func Split(paths []string, refs []*sam.Reference, N int) chan Chunk {
 
 		for _, path := range paths {
 			osz := indexcov.ReadIndex(path).Sizes()
-			for i := range refs {
+			for _, ref := range refs {
+				i := ref.ID()
 				for i >= len(sizes) {
 					sizes = append(sizes, make([]float64, 0))
 				}
@@ -94,37 +96,60 @@ func Split(paths []string, refs []*sam.Reference, N int) chan Chunk {
 
 		percents, sums := getPercents(sizes)
 
-		for ri, ref := range refs {
+		for _, ref := range refs {
+			ri := ref.ID()
 			if ri >= len(sizes) || len(sizes[ri]) == 0 {
+				// output the empty chrom with a sum of 0 the user isn't.
+				ch <- Chunk{Chrom: ref.Name(), Start: 0, End: ref.Len(), Sum: 0, Splits: 0}
 				continue
 			}
 			n := int(percents[ri] * float64(N))
 			if n == 0 && percents[ri] > 0 {
 				n = 1
+			} else if n == 0 {
+				ch <- Chunk{Chrom: ref.Name(), Start: 0, End: ref.Len(), Sum: 0, Splits: 0}
+				continue
 			}
 			// we get `chunk` as a sum and then we know we have enough data.
 			chunk := sums[ri] / float64(n)
 			size := sizes[ri]
-			ni := 1
 
-			for i := 0; i < len(size); {
-				var sum float64
-				var j int
-				for j = i; j < len(size); j++ {
-					sum += size[j]
-					if sum > chunk && (ni < n || j == len(size)-1) {
-						if ni == n {
-							ch <- Chunk{Chrom: ref.Name(), Start: i * indexcov.TileWidth, End: ref.Len(), Sum: sum}
-						} else {
-							ni++
-							ch <- Chunk{Chrom: ref.Name(), Start: i * indexcov.TileWidth, End: j * indexcov.TileWidth, Sum: sum}
-						}
-						break
+			var sum float64
+			var lasti int
+			// loop over the tiles and yield regions as soon as each is > chunk.
+			for i := 0; i < len(size); i++ {
+				// for single Tiles > chunk, we split into smaller regions.
+				if size[i] > chunk {
+					//if sum >= 0 && i > lasti {
+					if i > lasti {
+						ch <- Chunk{Chrom: ref.Name(), Start: lasti * indexcov.TileWidth, End: i * indexcov.TileWidth, Sum: sum, Splits: 1}
 					}
-				}
-				i = j
-			}
+					sum = size[i]
+					nsplits := int(0.5 + (sum / (chunk / 2)))
+					if nsplits > 8 {
+						nsplits = 8
+					}
+					start := i * indexcov.TileWidth
+					l := int(float64(indexcov.TileWidth)/float64(nsplits) + 1)
+					for k := 0; k < nsplits; k++ {
+						ch <- Chunk{Chrom: ref.Name(), Start: start, End: imin(start+l, (i+1)*indexcov.TileWidth), Sum: sum / float64(nsplits), Splits: nsplits}
+						start += l
+					}
 
+					lasti, sum = i+1, 0
+					continue
+				}
+				sum += size[i]
+				if sum >= chunk || i == len(size)-1 {
+					if i == len(size)-1 {
+						ch <- Chunk{Chrom: ref.Name(), Start: lasti * indexcov.TileWidth, End: ref.Len(), Sum: sum, Splits: 1}
+					} else {
+						ch <- Chunk{Chrom: ref.Name(), Start: lasti * indexcov.TileWidth, End: (i + 1) * indexcov.TileWidth, Sum: sum, Splits: 1}
+					}
+					lasti = i + 1
+					sum = 0
+				}
+			}
 		}
 		close(ch)
 
