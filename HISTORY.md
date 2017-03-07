@@ -1,11 +1,11 @@
-v0.1.14 (development)
+v0.1.14
 =======
 + `indexcov`: speed and memory improvements.
 + `indexcov`: support crai.
 + `indexcov`: prettier plot and labels for pngs.
 + `indexcov`: bin plot shows proportions rather than total numbers.
 + `indexcov`: better messages and docs for `--sex` argument.
-+ `indexsplit`: new tool to generate regions for parallelization (using indexes)
++ `indexsplit`: new tool to generate regions for parallelization (from bam/cram indexes)
 
 v0.1.13
 =======
