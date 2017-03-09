@@ -13,14 +13,18 @@ import (
 
 	arg "github.com/alexflint/go-arg"
 	"github.com/biogo/hts/sam"
+	"github.com/biogo/store/interval"
+	"github.com/brentp/goleft/depth"
 	"github.com/brentp/goleft/indexcov"
 	"github.com/gonum/floats"
+	"github.com/gonum/stat"
 )
 
 type cliargs struct {
-	N       int      `arg:"-n,required,help:number of regions to split to."`
-	Fai     string   `arg:"--fai,help:fasta index file."`
-	Indexes []string `arg:"positional,required,help:bai's/crais to use for splitting genome."`
+	N           int      `arg:"-n,required,help:number of regions to split to."`
+	Fai         string   `arg:"--fai,help:fasta index file."`
+	Problematic string   `arg:"-p,help:pipe-delimited list of regions to split small."`
+	Indexes     []string `arg:"positional,required,help:bai's/crais to use for splitting genome."`
 }
 
 func imin(a, b int) int {
@@ -30,8 +34,22 @@ func imin(a, b int) int {
 	return b
 }
 
+func chop(sizes [][]float64) {
+	for k, size := range sizes {
+		m, std := stat.MeanStdDev(size, nil)
+		max := m + 3*std
+		for i, s := range size {
+			if s > max {
+				size[i] = 8 * m
+			}
+		}
+		sizes[k] = size
+	}
+}
+
 // return the proportion of data in each chromosome.
 func getPercents(sizes [][]float64) ([]float64, []float64) {
+	chop(sizes)
 	var tot float64
 	pcts := make([]float64, len(sizes))
 	sums := make([]float64, len(sizes))
@@ -60,7 +78,7 @@ func (c Chunk) String() string {
 }
 
 // Split takes paths of bams or crais and generates `N` `Chunks`
-func Split(paths []string, refs []*sam.Reference, N int) chan Chunk {
+func Split(paths []string, refs []*sam.Reference, N int, probs map[string]*interval.IntTree) chan Chunk {
 
 	ch := make(chan Chunk)
 	go func() {
@@ -116,10 +134,18 @@ func Split(paths []string, refs []*sam.Reference, N int) chan Chunk {
 
 			var sum float64
 			var lasti int
+			var tree *interval.IntTree
+			if probs != nil {
+				if t, ok := probs[ref.Name()]; ok {
+					tree = t
+				}
+			}
 			// loop over the tiles and yield regions as soon as each is > chunk.
 			for i := 0; i < len(size); i++ {
 				// for single Tiles > chunk, we split into smaller regions.
-				if size[i] > chunk {
+				// 120 heuristic is arbitrary, may need to be tuned.
+				ovl := depth.Overlaps(tree, i*indexcov.TileWidth, (i+1)*indexcov.TileWidth)
+				if size[i] > chunk || (size[i] >= 0.05*chunk && ovl) {
 					//if sum >= 0 && i > lasti {
 					if i > lasti {
 						ch <- Chunk{Chrom: ref.Name(), Start: lasti * indexcov.TileWidth, End: i * indexcov.TileWidth, Sum: sum, Splits: 1}
@@ -128,11 +154,20 @@ func Split(paths []string, refs []*sam.Reference, N int) chan Chunk {
 					nsplits := int(0.5 + (sum / (chunk / 2)))
 					if nsplits > 8 {
 						nsplits = 8
+					} else if nsplits < 1 {
+						nsplits = 1
+						if ovl {
+							nsplits = 3
+						}
 					}
 					start := i * indexcov.TileWidth
 					l := int(float64(indexcov.TileWidth)/float64(nsplits) + 1)
 					for k := 0; k < nsplits; k++ {
-						ch <- Chunk{Chrom: ref.Name(), Start: start, End: imin(start+l, (i+1)*indexcov.TileWidth), Sum: sum / float64(nsplits), Splits: nsplits}
+						if i+k == len(size) {
+							ch <- Chunk{Chrom: ref.Name(), Start: start, End: ref.Len(), Sum: sum / float64(nsplits), Splits: nsplits}
+						} else {
+							ch <- Chunk{Chrom: ref.Name(), Start: start, End: imin(start+l, (i+1)*indexcov.TileWidth), Sum: sum / float64(nsplits), Splits: nsplits}
+						}
 						start += l
 					}
 
@@ -140,7 +175,7 @@ func Split(paths []string, refs []*sam.Reference, N int) chan Chunk {
 					continue
 				}
 				sum += size[i]
-				if sum >= chunk || i == len(size)-1 {
+				if sum >= chunk || i == len(size)-1 || (sum >= 0.2*chunk && ovl) {
 					if i == len(size)-1 {
 						ch <- Chunk{Chrom: ref.Name(), Start: lasti * indexcov.TileWidth, End: ref.Len(), Sum: sum, Splits: 1}
 					} else {
@@ -163,13 +198,18 @@ func Main() {
 	cli := &cliargs{}
 	arg.MustParse(cli)
 
+	var probs map[string]*interval.IntTree
+	if cli.Problematic != "" {
+		probs = depth.ReadTree(cli.Problematic)
+	}
+
 	var refs []*sam.Reference
 	if strings.HasSuffix(cli.Indexes[0], ".bam") {
 		refs = indexcov.RefsFromBam(cli.Indexes[0], "")
 	} else {
 		refs = indexcov.ReadFai(cli.Fai, "")
 	}
-	for chunk := range Split(cli.Indexes, refs, cli.N) {
+	for chunk := range Split(cli.Indexes, refs, cli.N, probs) {
 		fmt.Println(chunk)
 	}
 }

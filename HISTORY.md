@@ -1,3 +1,8 @@
+v0.1.15 (dev)
+=============
++ `indexsplit`: more closely match request number of regions.
++ `indexsplit`: allow specifying "problematic" regions which are split more finely.
+
 v0.1.14
 =======
 + `indexcov`: speed and memory improvements.
