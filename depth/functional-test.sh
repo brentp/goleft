@@ -93,7 +93,7 @@ for w in 50 55 60 71 13 2002; do
     assert_equal "$(check_with_bed_bt x.callable.bed test/windows.bed)" ""
     assert_equal "$(check_uniq x.depth.bed bed)" "OK"
     assert_equal "$(check_uniq x.callable.bed bed)" "OK"
-    run compare_to_samtools_directly$W python test/cmp.py x.depth.bed test/t.bam
+    run compare_to_samtools_directly$w python test/cmp.py x.depth.bed test/t.bam
 done
 
 assert_exit_code 0
