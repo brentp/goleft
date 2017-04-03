@@ -15,3 +15,4 @@ script:
   - cd indexcov && bash functional-tests.sh ; cd ..
   - cd depth && bash functional-test.sh ; cd ..
   - cd indexsplit && bash functional-tests.sh; cd ..
+  - cd samplename && bash functional-tests.sh; cd ..

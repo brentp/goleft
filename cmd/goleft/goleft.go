@@ -13,6 +13,7 @@ import (
 	"github.com/brentp/goleft/depthwed"
 	"github.com/brentp/goleft/indexcov"
 	"github.com/brentp/goleft/indexsplit"
+	"github.com/brentp/goleft/samplename"
 )
 
 type progPair struct {
@@ -26,6 +27,7 @@ var progs = map[string]progPair{
 	"covmed":     progPair{"calculate median coverage on a bam by sampling", covmed.Main},
 	"indexcov":   progPair{"quick coverage estimate using only the bam index", indexcov.Main},
 	"indexsplit": progPair{"create regions of even coverage across bams/crams", indexsplit.Main},
+	"samplename": progPair{"report samplename(s) from a bam's SM tag", samplename.Main},
 }
 
 func printProgs() {
