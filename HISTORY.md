@@ -2,6 +2,7 @@ v0.1.15 (dev)
 =============
 + `indexsplit`: more closely match request number of regions.
 + `indexsplit`: allow specifying "problematic" regions which are split more finely.
++ `samplename`: **new tool** report the sample name of a bam from the read-group in its header.
 
 v0.1.14
 =======

@@ -174,6 +174,7 @@ func getRef(b *bam.Reader, chrom string) *sam.Reference {
 }
 
 func GetShortName(b string, isCrai bool) (string, error) {
+	// TODO: replace this with samplename.Names()
 
 	if !isCrai {
 		fh, err := os.Open(b)
