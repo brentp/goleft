@@ -35,3 +35,4 @@ go install github.com/brentp/goleft/cmd/goleft
 + depthwed : matricize output from depth to n-sites * n-samples
 + [indexcov](https://github.com/brentp/goleft/tree/master/indexcov#indexcov) : quick coverage estimate using only the bam index
 + [indexsplit](https://github.com/brentp/goleft/tree/master/indexsplit#indexsplit) : generate regions of even data across a cohort (for parallelization)
++ [samplename](https://github.com/brentp/goleft/tree/master/samplename#samplename): report samplename(s) from a bam's SM tag
