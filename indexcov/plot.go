@@ -110,6 +110,7 @@ func plotDepths(depths [][]float32, samples []string, chrom string, base string,
 	}
 	for i, depth := range depths {
 		xys := asValues(depth, 16384)
+		//log.Println(chrom, samples[i], len(xys.Xs()))
 		c := randomColor(i)
 		dataset := chartjs.Dataset{Data: xys, Label: samples[i], Fill: chartjs.False, PointRadius: 0, BorderWidth: w,
 			BorderColor: c, BackgroundColor: c, SteppedLine: chartjs.True, PointHitRadius: 6}
@@ -387,7 +388,7 @@ func asPng(path string, chart chartjs.Chart, wInches float64, hInches float64) {
 	data := chart.Data.Datasets[0].Data.(*vs)
 	xs := data.Xs()
 	// check if we are in a depth plot
-	if xs[len(xs)-1] > 3 {
+	if len(xs) > 0 && xs[len(xs)-1] > 3 {
 		p.Y.Tick.Marker = ydticks{}
 		p.X.Tick.Marker = xdticks{}
 	}
