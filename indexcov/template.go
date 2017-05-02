@@ -32,6 +32,25 @@ section {
 	height: auto;
 }
 
+.a3 {
+    width: 32%;
+    height: 380px;
+    float: left;
+    padding: 2px;
+}
+.b3 {
+    width: 32%;
+    margin-left: 32%;
+    height: 380px;
+    padding: 2px;
+}
+.c3 {
+    width: 32%;
+    margin-left: 32%;
+    height: 380px;
+    padding: 2px;
+}
+
 .one {
     width: 48%;
     height: 380px;
@@ -55,19 +74,31 @@ Click the <span class="help">?</span> above each plot for help describing that t
 
 
 	<section>
-	<div class="one">
+	<table style="width:100%">
+	<tr>
+	<td>
 	<span class="tt">Inferred sex</span> <a class="help" href="https://github.com/brentp/goleft/blob/master/docs/indexcov/help-sex.md" target="_blank">?</a>
 	{{ if $has_sex }}
 	<canvas id="canvas-sex" style="height:380px;width:380px"></canvas>
 	{{ else }}
 	<p> Fewer than 2 sex chromosomes found; sex plot not shown.</p>
 	{{ end }}
-	</div>
+	</td>
 
-	<div class="two">
+	<td>
+	{{ if index . "hasMap" }}
+	<span class="tt">Mapped Counts</span> <a class="help" href="https://github.com/brentp/goleft/blob/master/docs/indexcov/help-counts.md" target="_blank">?</a>
+	<canvas id="canvas-map" style="height:380px;width:380px"></canvas>
+	{{ end }}
+	</td>
+
+	<td>
 	<span class="tt">Bin Counts</span> <a class="help" href="https://github.com/brentp/goleft/blob/master/docs/indexcov/help-bin.md" target="_blank">?</a>
 	<canvas id="canvas-bin" style="height:380px;width:380px"></canvas>
-	</div>
+	</td>
+	</tr>
+	</table>
+
 
 	</section>
 	<hr>
@@ -157,6 +188,7 @@ Click the <span class="help">?</span> above each plot for help describing that t
 	Chart.defaults.global.animation.duration = 0;
 
     {{ $has_sex := index . "hasSex" }}
+    {{ $has_map := index . "hasMap" }}
 
 {{ if $has_sex }}
     {{ $sex_json := index . "sex" }}
@@ -166,6 +198,13 @@ Click the <span class="help">?</span> above each plot for help describing that t
 	{{ index . "sexjs" }}
 {{ end }}
 
+{{ if $has_map }}
+    {{ $map_json := index . "mapChart" }}
+	var map_ctx = document.getElementById("canvas-map").getContext("2d");
+	var map_chart = new Chart(map_ctx, {{ $map_json }});
+	var chart = map_chart;
+	{{ index . "mapjs" }}
+{{ end }}
 
     {{ $bin_json := index . "bin" }}
 	var bin_ctx = document.getElementById("canvas-bin").getContext("2d");

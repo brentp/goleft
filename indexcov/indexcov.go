@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -54,6 +55,8 @@ type Index struct {
 	//mu                *sync.RWMutex
 	medianSizePerTile float64
 	sizes             [][]int64
+	mapped            uint64
+	unmapped          uint64
 }
 
 // Sizes returns the size of each block in slices of chromosomes.
@@ -68,7 +71,7 @@ func vOffset(o bgzf.Offset) int64 {
 // init sets the medianSizePerTile
 func (x *Index) init() {
 	if x.Index != nil {
-		x.sizes = getSizes(x.Index)
+		x.sizes, x.mapped, x.unmapped = getSizes(x.Index)
 		x.Index = nil
 	} else {
 		x.sizes = x.crai.Sizes()
@@ -354,9 +357,23 @@ func Main() {
 	wg.Wait()
 
 	sexes, counts, pca8, chromNames, slopes := run(refs, idxs, names, getBase(cli.Directory))
+	mapped := make([]uint64, len(names))
+	unmapped := make([]uint64, len(names))
+	anygt := false
+	for i, ix := range idxs {
+		mapped[i] = ix.mapped
+		unmapped[i] = ix.unmapped
+		if ix.mapped > 0 || ix.unmapped > 0 {
+			anygt = true
+		}
+	}
+	if !anygt {
+		mapped = nil
+		unmapped = nil
+	}
 
 	chartjs.XFloatFormat = "%.2f"
-	if indexPath := writeIndex(sexes, counts, cli.sex, names, cli.Directory, pca8, slopes, chromNames); indexPath != "" {
+	if indexPath := writeIndex(sexes, counts, cli.sex, names, cli.Directory, pca8, slopes, chromNames, mapped, unmapped); indexPath != "" {
 		fmt.Fprintf(os.Stderr, "indexcov finished: see %s for overview of output\n", indexPath)
 	}
 }
@@ -632,7 +649,8 @@ func getBase(directory string) string {
 }
 
 // write an index.html and a ped file. includes the PC projections and inferred sexes.
-func writeIndex(sexes map[string][]float64, counts []*counter, keys []string, samples []string, directory string, pca8 [][]uint8, slopes []float32, chromNames []string) string {
+func writeIndex(sexes map[string][]float64, counts []*counter, keys []string, samples []string, directory string, pca8 [][]uint8, slopes []float32,
+	chromNames []string, mapped []uint64, unmapped []uint64) string {
 	if len(sexes) == 0 {
 		log.Println("sex chromosomes not found.")
 	} else {
@@ -662,6 +680,10 @@ func writeIndex(sexes map[string][]float64, counts []*counter, keys []string, sa
 		for i := 0; i < 5 && i < c; i++ {
 			hdr = append(hdr, fmt.Sprintf("PC%d", i+1))
 		}
+	}
+	if mapped != nil {
+		hdr = append(hdr, "mapped")
+		hdr = append(hdr, "unmapped")
 	}
 
 	fmt.Fprintf(f, "#family_id\tsample_id\tpaternal_id\tmaternal_id\tsex\tphenotype\t%s\n", strings.Join(hdr, "\t"))
@@ -695,6 +717,10 @@ func writeIndex(sexes map[string][]float64, counts []*counter, keys []string, sa
 		for j := 0; j < c && j < 5; j++ {
 			s = append(s, fmt.Sprintf("%.2f", pcs.At(i, j)))
 		}
+		if mapped != nil {
+			s = append(s, strconv.Itoa(int(mapped[i])))
+			s = append(s, strconv.Itoa(int(unmapped[i])))
+		}
 
 		fmt.Fprintln(f, strings.Join(s, "\t"))
 	}
@@ -707,6 +733,16 @@ func writeIndex(sexes map[string][]float64, counts []*counter, keys []string, sa
 			panic(err)
 		}
 	}
+
+	var mapChart *chartjs.Chart
+	var mapjs string
+	if mapped != nil {
+		mapChart, mapjs, err = plotMapped(mapped, unmapped, samples)
+		if err != nil {
+			panic(err)
+		}
+	}
+
 	indexPath := fmt.Sprintf("%s%cindex.html", directory, os.PathSeparator)
 	wtr, err := os.Create(indexPath)
 	if err != nil {
@@ -715,24 +751,27 @@ func writeIndex(sexes map[string][]float64, counts []*counter, keys []string, sa
 
 	chartMap := map[string]interface{}{"pcajs": template.JS(pcajs), "pcbjs": template.JS(pcajs),
 		"template": chartTemplate,
-		"sex":      sexChart,
-		"hasSex":   true,
-		"sexjs":    template.JS(sexjs),
-		"bin":      binChart,
-		"binjs":    template.JS(binjs),
-		"version":  goleft.Version,
-		"prefix":   getBase(directory),
-		"name":     filepath.Base(directory),
-		"chroms":   chromNames}
+
+		"sex":    sexChart,
+		"hasSex": sexChart != nil,
+		"sexjs":  template.JS(sexjs),
+
+		"mapChart": mapChart,
+		"hasMap":   mapped != nil,
+		"mapjs":    template.JS(mapjs),
+
+		"bin":     binChart,
+		"binjs":   template.JS(binjs),
+		"version": goleft.Version,
+		"prefix":  getBase(directory),
+		"name":    filepath.Base(directory),
+		"chroms":  chromNames}
 	if len(pcaPlots) > 1 {
 		chartMap["pca"] = pcaPlots[0]
 		chartMap["pcb"] = pcaPlots[1]
 		chartMap["hasPCA"] = true
 	} else {
 		chartMap["hasPCA"] = false
-	}
-	if sexChart == nil {
-		chartMap["hasSex"] = false
 	}
 	chartMap["notmany"] = len(samples) <= maxSamples
 	if err := chartjs.SaveCharts(wtr, chartMap, chartjs.Chart{}); err != nil {

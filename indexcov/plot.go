@@ -281,6 +281,61 @@ func plotROCs(rocs [][]float32, samples []string, chrom string) (chartjs.Chart, 
 	return chart, nil
 }
 
+func plotMapped(mapped []uint64, unmapped []uint64, samples []string) (*chartjs.Chart, string, error) {
+	if len(mapped) != len(samples) {
+		return nil, "", fmt.Errorf("plottMapped: unequal numbers in samples and mapped: %d vs %d", len(mapped), len(samples))
+	}
+	chart := chartjs.Chart{}
+	xa, err := chart.AddXAxis(chartjs.Axis{Type: chartjs.Linear, Position: chartjs.Bottom,
+		ScaleLabel: &chartjs.ScaleLabel{FontSize: 16, LabelString: "log(mapped reads)",
+			Display: chartjs.True}, Tick: &chartjs.Tick{Min: 0}})
+	if err != nil {
+		return nil, "", err
+	}
+	ya, err := chart.AddYAxis(chartjs.Axis{Type: chartjs.Linear, Position: chartjs.Left,
+		ScaleLabel: &chartjs.ScaleLabel{FontSize: 16, LabelString: "log(unmapped reads)",
+			Display: chartjs.True}, Tick: &chartjs.Tick{Min: 0}})
+	if err != nil {
+		return nil, "", err
+	}
+
+	vals := &vs{xs: make([]float64, len(mapped)),
+		ys: make([]float64, len(mapped))}
+	for i, m := range mapped {
+		vals.xs[i] = math.Log1p(float64(m))
+		vals.ys[i] = math.Log1p(float64(unmapped[i]))
+	}
+	c := &types.RGBA{R: 110, G: 250, B: 59, A: 240}
+
+	dataset := chartjs.Dataset{Data: vals, Label: "samples", Fill: chartjs.False, PointHoverRadius: 6,
+		PointRadius: 4, BorderWidth: 0, BorderColor: &types.RGBA{R: 150, G: 150, B: 150, A: 150},
+		PointBackgroundColor: c, BackgroundColor: c, ShowLine: chartjs.False, PointHitRadius: 6}
+	chart.Options.Legend = &chartjs.Legend{Display: chartjs.False}
+
+	dataset.XAxisID = xa
+	dataset.YAxisID = ya
+	chart.AddDataset(dataset)
+
+	sjson, err := json.Marshal(samples)
+	if err != nil {
+		panic(err)
+	}
+
+	jsfunc := fmt.Sprintf(`
+	chart.options.hover.mode = 'index'
+	chart.options.tooltips.callbacks.title = function(tts, data) {
+		var names = [%s]
+		var out = []
+		tts.forEach(function(ti) {
+			out.push(names[ti.datasetIndex][ti.index])
+		})
+		return out.join(",")
+	}`, sjson)
+	chart.Options.Responsive = chartjs.False
+	chart.Options.Tooltip = &chartjs.Tooltip{Mode: "nearest"}
+	return &chart, jsfunc, nil
+}
+
 func plotSex(sexes map[string][]float64, chroms []string, samples []string) (*chartjs.Chart, string, error) {
 	chart := chartjs.Chart{Label: "sex"}
 	tmp := sexes["_inferred"]

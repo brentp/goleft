@@ -1,3 +1,7 @@
+v0.1.16-dev
+===========
++ `indexcov`: report and plot number of mapped and unmapped reads as reported by the index.
+
 v0.1.15
 =======
 + `indexsplit`: more closely match request number of regions.

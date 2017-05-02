@@ -34,7 +34,7 @@ export -f num_colcounts
 export -f check_nobams
 run check_no_bams ./goleft_test indexcov -d /tmp/tt
 assert_exit_code 255
-assert_in_stderr "expected at least 1 bam"
+assert_in_stderr "error: bam is required"
 
 
 get sample_name_0001.bam
@@ -85,12 +85,14 @@ if [[ ! -e human_g1k_v37.fasta.fai ]]; then
     wget -q ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/technical/reference/human_g1k_v37.fasta.fai
 fi
 
+#export INDEXCOV_FMT=svg
+run check_cohort ./goleft_test indexcov -d /tmp/tt samples/*.bam
+assert_exit_code 0
+assert_equal $(num_colcounts /tmp/tt/tt-indexcov.ped) 1
+exit
+
 run check_crai ./goleft_test indexcov --fai human_g1k_v37.fasta.fai -d /tmp/1kg NA21144.mapped.ILLUMINA.bwa.GIH.low_coverage.20130415.bam.cram.crai
 assert_exit_code 0
 assert_in_stderr "index.html for overview"
 assert_equal $(num_colcounts /tmp/1kg/1kg-indexcov.ped) 1
 
-export INDEXCOV_FMT=svg
-run check_cohort ./goleft_test indexcov -d /tmp/tt samples/*.bam
-assert_exit_code 0
-assert_equal $(num_colcounts /tmp/tt/tt-indexcov.ped) 1

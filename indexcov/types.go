@@ -1,6 +1,7 @@
 package indexcov
 
 import (
+	"log"
 	"reflect"
 	"unsafe"
 
@@ -41,7 +42,8 @@ type referenceStats struct {
 	Unmapped uint64
 }
 
-func getSizes(idx *bam.Index) [][]int64 {
+func getSizes(idx *bam.Index) ([][]int64, uint64, uint64) {
+	var mapped, unmapped uint64
 	refs := reflect.ValueOf(*idx).FieldByName("idx").FieldByName("Refs")
 	ptr := unsafe.Pointer(refs.Pointer())
 
@@ -49,6 +51,13 @@ func getSizes(idx *bam.Index) [][]int64 {
 	// save some memory.
 	m := make([][]int64, len(ret))
 	for i, r := range ret {
+		st, ok := idx.ReferenceStats(i)
+		if ok {
+			mapped += st.Mapped
+			unmapped += st.Unmapped
+		} else {
+			log.Printf("no reference stats found for %dth reference", i)
+		}
 		if len(r.Intervals) < 2 {
 			m[i] = make([]int64, 0)
 			continue
@@ -62,5 +71,5 @@ func getSizes(idx *bam.Index) [][]int64 {
 		}
 		r.Bins, r.Intervals = nil, nil
 	}
-	return m
+	return m, mapped, unmapped
 }
