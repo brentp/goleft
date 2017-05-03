@@ -8,7 +8,7 @@ coverage estimate in seconds per genome.
 The output is scaled to around 1. So a long stretch with values of 1.5 would be a heterozygous duplication.
 This is useful as a quick QC to get coverage values across the genome.
 
-In our tests, we can **estimate depth across a 60X genomes for 30 samples in 30 seconds**.
+In our tests, we can **estimate depth across 60X genomes for 30 samples in 30 seconds**.
 
 Interactive HTML plots of depth are output for each chromosome. **Live examples of the interactive output are available [here](http://indexcov.s3-website-us-east-1.amazonaws.com/)**
 

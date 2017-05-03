@@ -30,7 +30,7 @@ go install github.com/brentp/goleft/cmd/goleft
 
 # Commands
 
-+ [covmed](https://github.com/brentp/goleft/tree/master/covmed#covmed)   : calculate median coverage and insert-size on bams by sampling
++ [covstats](https://github.com/brentp/goleft/tree/master/covstats#covstats)   : estimate coverage and insert-size statistics on bams by sampling
 + [depth](https://github.com/brentp/goleft/tree/master/depth#depth)    : parallelize calls to samtools in user-defined windows
 + depthwed : matricize output from depth to n-sites * n-samples
 + [indexcov](https://github.com/brentp/goleft/tree/master/indexcov#indexcov) : quick coverage estimate using only the bam index

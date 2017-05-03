@@ -1,9 +1,11 @@
 v0.1.16-dev
 ===========
 + `indexcov`: report and plot number of mapped and unmapped reads as reported by the index.
-+ `covmed`: report samplename(s) from read groups as well as bam path.
-+ `covmed`: skip first 100K reads to give better estimates of depth.
-+ `covmed`: report percent of bad (QC-Fail|Duplicate) and of umapped reads.
++ `covmed`: rename to `covstats`
++ `covstats`: report samplename(s) from read groups as well as bam path.
++ `covstats`: skip first 100K reads to give better estimates of depth.
++ `covstats`: report percent of bad (QC-Fail|Duplicate) and of umapped reads.
+
 
 v0.1.15
 =======

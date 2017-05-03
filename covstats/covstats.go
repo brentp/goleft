@@ -1,4 +1,4 @@
-package covmed
+package covstats
 
 import (
 	"fmt"

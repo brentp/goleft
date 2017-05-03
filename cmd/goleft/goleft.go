@@ -8,7 +8,7 @@ import (
 	"strconv"
 
 	"github.com/brentp/goleft"
-	"github.com/brentp/goleft/covmed"
+	"github.com/brentp/goleft/covstats"
 	"github.com/brentp/goleft/depth"
 	"github.com/brentp/goleft/depthwed"
 	"github.com/brentp/goleft/indexcov"
@@ -24,7 +24,7 @@ type progPair struct {
 var progs = map[string]progPair{
 	"depth":      progPair{"parallelize calls to samtools in user-defined windows", depth.Main},
 	"depthwed":   progPair{"matricize output from depth to n-sites * n-samples", depthwed.Main},
-	"covmed":     progPair{"calculate median coverage on a bam by sampling", covmed.Main},
+	"covstats":   progPair{"coverage stats across bams by sampling", covstats.Main},
 	"indexcov":   progPair{"quick coverage estimate using only the bam index", indexcov.Main},
 	"indexsplit": progPair{"create regions of even coverage across bams/crams", indexsplit.Main},
 	"samplename": progPair{"report samplename(s) from a bam's SM tag", samplename.Main},
