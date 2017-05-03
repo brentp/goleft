@@ -12,6 +12,7 @@ import (
 	arg "github.com/alexflint/go-arg"
 	"github.com/biogo/hts/bam"
 	"github.com/biogo/hts/sam"
+	"github.com/brentp/goleft/samplename"
 	"github.com/brentp/xopen"
 )
 
@@ -81,6 +82,7 @@ func (s Sizes) String() string {
 
 // BamInsertSizes takes bam reader sample N well-behaved sites and return the coverage and insert-size info
 func BamInsertSizes(br *bam.Reader, n int) Sizes {
+	br.Omit(bam.AllVariableLengthData)
 	sizes := make([]int, 0, 2*n)
 	insertSizes := make([]int, 0, n)
 	templateLengths := make([]int, 0, n)
@@ -91,13 +93,20 @@ func BamInsertSizes(br *bam.Reader, n int) Sizes {
 			break
 		}
 		pcheck(err)
-		if rec.Flags&(sam.Duplicate|sam.QCFail|sam.Unmapped|sam.Secondary) != 0 {
+		if rec.Flags&(sam.Duplicate|sam.QCFail) != 0 {
 			nBad++
+			continue
+		}
+		if rec.Flags&sam.Unmapped != 0 {
 			continue
 		}
 		if len(sizes) < 2*n {
 			_, read := rec.Cigar.Lengths()
 			sizes = append(sizes, read-1)
+		} else {
+			if len(insertSizes) == 0 {
+				break
+			}
 		}
 
 		if rec.Pos < rec.MatePos && rec.Flags&sam.ProperPair == sam.ProperPair && len(rec.Cigar) == 1 && rec.Cigar[0].Type() == sam.CigarMatch {
@@ -130,7 +139,7 @@ func BamInsertSizes(br *bam.Reader, n int) Sizes {
 
 // Main is called from the dispatcher
 func Main() {
-	fmt.Fprintln(os.Stdout, "coverage\tinsert_mean\tinsert_sd\tinsert_5th\tinsert_95th\ttemplate_mean\ttemplate_sd\tbam")
+	fmt.Fprintln(os.Stdout, "coverage\tinsert_mean\tinsert_sd\tinsert_5th\tinsert_95th\ttemplate_mean\ttemplate_sd\tbam\tsample")
 
 	arg.MustParse(&cli)
 	for _, bamPath := range cli.Bams {
@@ -140,6 +149,8 @@ func Main() {
 
 		brdr, err := bam.NewReader(fh, 2)
 		pcheck(err)
+
+		names := samplename.Names(brdr.Header())
 
 		ifh, ierr := os.Open(bamPath + ".bai")
 		if ierr != nil {
@@ -172,6 +183,6 @@ func Main() {
 		sizes := BamInsertSizes(brdr, cli.N)
 		coverage := (1 - sizes.ProportionBad) * float64(mapped) * sizes.ReadLengthMean / float64(genomeBases)
 
-		fmt.Fprintf(os.Stdout, "%.2f\t%s\t%s\n", coverage, sizes.String(), bamPath)
+		fmt.Fprintf(os.Stdout, "%.2f\t%s\t%s\t%s\n", coverage, sizes.String(), bamPath, strings.Join(names, ","))
 	}
 }

@@ -5,3 +5,9 @@
 *_darwin
 *pprof*
 *.gz
+indexcov/*.bam
+indexcov/*.cram
+indexcov/*.bai
+indexcov/*.crai
+ssshtest
+goleft_test

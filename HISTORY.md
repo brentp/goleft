@@ -1,6 +1,7 @@
 v0.1.16-dev
 ===========
 + `indexcov`: report and plot number of mapped and unmapped reads as reported by the index.
++ `covmed`: report samplename(s) from read groups as well as bam path.
 
 v0.1.15
 =======
