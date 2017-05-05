@@ -43,6 +43,9 @@ run check_single_sample ./goleft_test indexcov -d /tmp/tt sample_name_0001.bam
 assert_exit_code 0
 assert_in_stderr "not plotting"
 assert_equal $(num_colcounts /tmp/tt/tt-indexcov.ped) 1
+assert_equal $(zgrep -wc ^1 /tmp/tt-indexcov.bed.gz ) 14748
+
+
 
 run check_sex ./goleft_test indexcov -d /tmp/tt --sex "X,Y" sample_name_0001.bam
 assert_exit_code 0
@@ -89,7 +92,13 @@ fi
 run check_cohort ./goleft_test indexcov -d /tmp/tt samples/*.bam
 assert_exit_code 0
 assert_equal $(num_colcounts /tmp/tt/tt-indexcov.ped) 1
-exit
+
+
+rm -f /tmp/tt/tt-indexcov.bed.gz
+run check_exclude ./goleft_test indexcov --excludepatt '^1$' -d /tmp/tt samples/sample_paper_0001.bam
+assert_equal $(zgrep -wc ^1 /tmp/tt/tt-indexcov.bed.gz ) 0
+assert_exit_code 0
+cat $STDERR_FILE
 
 run check_crai ./goleft_test indexcov --fai human_g1k_v37.fasta.fai -d /tmp/1kg NA21144.mapped.ILLUMINA.bwa.GIH.low_coverage.20130415.bam.cram.crai
 assert_exit_code 0

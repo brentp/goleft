@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -34,14 +35,16 @@ import (
 var Ploidy = 2
 
 var cli = &struct {
-	Directory string   `arg:"-d,required,help:directory for output files"`
-	IncludeGL bool     `arg:"-e,help:plot GL chromosomes like: GL000201.1 which are not plotted by default"`
-	Sex       string   `arg:"-X,help:comma delimited names of the sex chromosome(s) used to infer sex. Set to '' if no sex chromosomes are present."`
-	Chrom     string   `arg:"-c,help:optional chromosome to extract depth. default is entire genome."`
-	Fai       string   `arg:"-f,help:fasta index file. Required when crais are used."`
-	Bam       []string `arg:"positional,required,help:bam(s) or crais for which to estimate coverage"`
-	sex       []string `arg:"-"`
-}{Sex: "X,Y"}
+	Directory   string         `arg:"-d,required,help:directory for output files"`
+	IncludeGL   bool           `arg:"-e,help:plot GL chromosomes like: GL000201.1 which are not plotted by default"`
+	ExcludePatt string         `arg:-p,help:regular expression of chromosome names to exclude"`
+	Sex         string         `arg:"-X,help:comma delimited names of the sex chromosome(s) used to infer sex. Set to '' if no sex chromosomes are present."`
+	Chrom       string         `arg:"-c,help:optional chromosome to extract depth. default is entire genome."`
+	Fai         string         `arg:"-f,help:fasta index file. Required when crais are used."`
+	Bam         []string       `arg:"positional,required,help:bam(s) or crais for which to estimate coverage"`
+	sex         []string       `arg:"-"`
+	exclude     *regexp.Regexp `arg:"-"`
+}{Sex: "X,Y", ExcludePatt: `^chrEBV$|^NC|_random$|Un_|^HLA\-|_alt$|hap\d$`}
 
 // MaxCN is the maximum normalized value.
 var MaxCN = float32(6)
@@ -135,7 +138,7 @@ func tint(f float32) int {
 // CountsAtDepth calculates the count of items in depths that are at 100 * d
 func CountsAtDepth(depths []float32, counts []int) {
 	if len(counts) != slots {
-		panic(fmt.Sprintf("indexcov: expecting counts to be length %d", slots))
+		panic(fmt.Sprintf("indexcov: expecting counts to be length %d, was: %d", slots, len(counts)))
 	}
 	for _, d := range depths {
 		counts[tint(d*(slots*float32(slotsMid))+0.5)]++
@@ -326,6 +329,9 @@ func Main() {
 	if len(cli.Sex) > 0 {
 		cli.sex = strings.Split(strings.TrimSpace(cli.Sex), ",")
 	}
+	if cli.ExcludePatt != "" {
+		cli.exclude = regexp.MustCompile(cli.ExcludePatt)
+	}
 
 	if exists, err := getDirectory(cli.Directory); err != nil || !exists {
 		log.Fatalf("indexcov: error creating specified directory: %s, %s", cli.Directory, err)
@@ -497,8 +503,13 @@ func run(refs []*sam.Reference, idxs []*Index, names []string, base string) (map
 	chromNames := make([]string, 0, len(refs))
 
 	fmt.Fprintf(bgz, "#chrom\tstart\tend\t%s\n", strings.Join(names, "\t"))
-	for ir, ref := range refs {
+	ir := -1
+	for _, ref := range refs {
 		chrom := ref.Name()
+		if cli.exclude != nil && cli.exclude.Match([]byte(chrom)) {
+			continue
+		}
+		ir++
 		// Some samples may not have all the data, so we always take the longest sample for printing.
 		longest, longesti := 0, 0
 

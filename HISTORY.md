@@ -1,11 +1,12 @@
-v0.1.16-dev
-===========
+v0.1.16
+=======
 + `indexcov`: report and plot number of mapped and unmapped reads as reported by the index.
 + `covmed`: rename to `covstats`
 + `covstats`: report samplename(s) from read groups as well as bam path.
 + `covstats`: skip first 100K reads to give better estimates of depth.
 + `covstats`: report percent of bad (QC-Fail|Duplicate) and of umapped reads.
-
++ `indexcov`: automatically exclude chromosomes that match pattern: `^chrEBV$|^NC|_random$|Un_|^HLA\-|_alt$|hap\d$`.
+              this can be adjust from the command-line.
 
 v0.1.15
 =======
