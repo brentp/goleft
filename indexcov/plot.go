@@ -16,6 +16,7 @@ import (
 	"github.com/gonum/plot"
 	"github.com/gonum/plot/plotter"
 	"github.com/gonum/plot/vg"
+	"github.com/gonum/stat"
 )
 
 type vs struct {
@@ -60,21 +61,34 @@ func (v *vs) Sample(nth int) *vs {
 // truncate depth values above this to cnMax
 const cnMax = 2.5
 
-func asValues(vals []float32, multiplier float64) chartjs.Values {
+func asValues(vals []float32, multiplier float64, allowSkip bool) chartjs.Values {
 
 	// skip until we find non-zero.
 	v := vs{xs: make([]float64, 0, len(vals)), ys: make([]float64, 0, len(vals))}
 	seenNonZero := false
+	lastIn := false
 	for i, r := range vals {
 		if r == 0 && !seenNonZero {
 			continue
 		}
-		seenNonZero = true
+		if allowSkip && ((r < 1.15 && r > 0.85) || r == math.MaxFloat32) {
+			if lastIn && i < len(vals)-1 && ((float64(vals[i+1]) > 0.85 && float64(vals[i+1]) < 1.15) || vals[i+1] == math.MaxFloat32) {
+				continue
+			}
+			lastIn = true
+		} else {
+			lastIn = false
+			seenNonZero = true
+		}
 		v.xs = append(v.xs, float64(i)*multiplier)
 		if r > cnMax {
 			r = cnMax
 		}
-		v.ys = append(v.ys, float64(r))
+		if lastIn {
+			v.ys = append(v.ys, math.NaN())
+		} else {
+			v.ys = append(v.ys, float64(r))
+		}
 	}
 	return &v
 }
@@ -88,7 +102,29 @@ func randomColor(s int) *types.RGBA {
 		A: 240}
 }
 
-func plotDepths(depths [][]float32, samples []string, chrom string, base string, writeHTML bool) error {
+func meanStds(depths [][]float32, longesti int) [][2]float64 {
+	ms := make([][2]float64, len(depths[longesti]))
+	for j := 0; j < len(depths[longesti]); j++ {
+		m, s := meanStd(depths, j)
+		ms[j][0], ms[j][1] = m, s
+	}
+	return ms
+
+}
+
+func meanStd(depths [][]float32, i int) (float64, float64) {
+	v := make([]float64, len(depths))
+	for j := 0; j < len(depths); j++ {
+		if i >= len(depths[j]) {
+			v[j] = 0
+		} else {
+			v[j] = float64(depths[j][i])
+		}
+	}
+	return stat.MeanStdDev(v, nil)
+}
+
+func plotDepths(depths [][]float32, samples []string, chrom string, base string, longesti int) error {
 	chart := chartjs.Chart{Label: chrom}
 	xa, err := chart.AddXAxis(chartjs.Axis{Type: chartjs.Linear, Position: chartjs.Bottom, ScaleLabel: &chartjs.ScaleLabel{FontSize: 16, LabelString: "position on " + chrom, Display: chartjs.True}})
 	if err != nil {
@@ -108,8 +144,19 @@ func plotDepths(depths [][]float32, samples []string, chrom string, base string,
 	if len(depths) > 50 {
 		w = 0.2
 	}
+
+	ms := meanStds(depths, longesti)
+
 	for i, depth := range depths {
-		xys := asValues(depth, 16384)
+
+		for k, d := range depth {
+			msk := ms[k]
+			if math.Abs(stat.StdScore(float64(d), msk[0], msk[1])) < 3 {
+				depth[k] = math.MaxFloat32
+			}
+		}
+
+		xys := asValues(depth, 16384, true)
 		//log.Println(chrom, samples[i], len(xys.Xs()))
 		c := randomColor(i)
 		dataset := chartjs.Dataset{Data: xys, Label: samples[i], Fill: chartjs.False, PointRadius: 0, BorderWidth: w,
@@ -120,18 +167,16 @@ func plotDepths(depths [][]float32, samples []string, chrom string, base string,
 	}
 	chart.Options.Responsive = chartjs.False
 	chart.Options.Tooltip = &chartjs.Tooltip{Mode: "nearest"}
-	if writeHTML {
-		wtr, err := os.Create(fmt.Sprintf("%s-depth-%s.html", base, chrom))
-		if err != nil {
-			return err
-		}
-		link := template.HTML(`<a href="index.html">back to index</a>`)
-		if err := chart.SaveHTML(wtr, map[string]interface{}{"width": 850, "height": 550, "customHTML": link}); err != nil {
-			return err
-		}
-		if err := wtr.Close(); err != nil {
-			return err
-		}
+	wtr, err := os.Create(fmt.Sprintf("%s-depth-%s.html", base, chrom))
+	if err != nil {
+		return err
+	}
+	link := template.HTML(`<a href="index.html">back to index</a>`)
+	if err := chart.SaveHTML(wtr, map[string]interface{}{"width": 850, "height": 550, "customHTML": link}); err != nil {
+		return err
+	}
+	if err := wtr.Close(); err != nil {
+		return err
 	}
 	asPng(fmt.Sprintf("%s-depth-%s.png", base, chrom), chart, 4, 3)
 
@@ -269,7 +314,7 @@ func plotROCs(rocs [][]float32, samples []string, chrom string) (chartjs.Chart, 
 	}
 
 	for i, roc := range rocs {
-		xys := asValues(roc, 1/float64(slots)*1/slotsMid)
+		xys := asValues(roc, 1/float64(slots)*1/slotsMid, false)
 		c := randomColor(i)
 		dataset := chartjs.Dataset{Data: xys, Label: samples[i], Fill: chartjs.False, PointRadius: 0.0, BorderWidth: 2, BorderColor: c, PointBackgroundColor: c, BackgroundColor: c, PointHitRadius: 8, PointHoverRadius: 3}
 		dataset.XAxisID = xa
@@ -407,38 +452,33 @@ func asPng(path string, chart chartjs.Chart, wInches float64, hInches float64) {
 	for i := range chart.Data.Datasets {
 		ds := chart.Data.Datasets[len(chart.Data.Datasets)-i-1]
 		data := ds.Data
-		// gonum plotting is a significant portion of the runtime so we sample datasets.
-		if data.(*vs).Len() > 2000 {
-			data = data.(*vs).Sample(10)
-		} else if data.(*vs).Len() > 1000 {
-			data = data.(*vs).Sample(5)
-		} else {
-			// no data for some chromosome.
-			bad := false
-			for _, d := range data.Ys() {
-				if math.IsNaN(d) {
-					bad = true
-					break
-				}
+		lastk, k := 0, 0
+		ys := data.Ys()
+		for i < len(data.Xs()) {
+			// gonum can't handle nans so we plot discontiguous data by splitting at NaN()
+			for k < len(ys) && !math.IsNaN(ys[k]) {
+				k++
 			}
-			if bad {
-				continue
+			i = k
+
+			vss := &vs{xs: data.Xs()[lastk:k], ys: data.Ys()[lastk:k]}
+			k++
+			lastk = k
+
+			l, err := plotter.NewLine(vss)
+			if err != nil {
+				panic(err)
 			}
-		}
+			c := color.RGBA(*ds.BorderColor)
+			c.A = 255
+			l.LineStyle.Width = vg.Points(0.8)
+			if len(chart.Data.Datasets) > 30 {
+				l.LineStyle.Width = vg.Points(0.65)
+			}
 
-		l, err := plotter.NewLine(data.(*vs))
-		if err != nil {
-			panic(err)
+			l.Color = c
+			p.Add(l)
 		}
-		c := color.RGBA(*ds.BorderColor)
-		c.A = 255
-		l.LineStyle.Width = vg.Points(0.8)
-		if len(chart.Data.Datasets) > 30 {
-			l.LineStyle.Width = vg.Points(0.65)
-		}
-
-		l.Color = c
-		p.Add(l)
 	}
 	data := chart.Data.Datasets[0].Data.(*vs)
 	xs := data.Xs()

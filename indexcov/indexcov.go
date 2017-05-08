@@ -563,7 +563,7 @@ func run(refs []*sam.Reference, idxs []*Index, names []string, base string) (map
 					nSlopes++
 				}
 				chromNames = append(chromNames, chrom)
-				if err := plotDepths(depths, names, chrom, base, len(names) < maxSamples); err != nil {
+				if err := plotDepths(depths, names, chrom, base, longesti); err != nil {
 					panic(err)
 				}
 				tmp := chartjs.XFloatFormat
