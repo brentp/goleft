@@ -124,6 +124,130 @@ func meanStd(depths [][]float32, i int) (float64, float64) {
 	return stat.MeanStdDev(v, nil)
 }
 
+const tjs = `
+var fillBetweenLinesPlugin = {
+    afterDatasetsDraw: function (chart) {
+		var ctx = chart.chart.ctx;
+		ctx.save();
+		var xaxis = chart.scales['xaxis0'];
+		var yaxis = chart.scales['yaxis0'];
+		var datasets = chart.data.datasets;
+		ctx.closePath();
+
+		// get meta for both data sets
+		var meta1 = chart.getDatasetMeta(datasets.length-2)
+		var meta2 = chart.getDatasetMeta(datasets.length-1)
+
+		ctx.lineWidth = 0.5;
+		ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+		ctx.beginPath();
+
+		// vars for tracing
+		var curr, prev;
+
+		// trace set1 line
+		for (var i = 0; i < meta1.data.length; i++) {
+			curr = meta1.data[i];
+			if (i === 0) {
+				ctx.moveTo(curr._view.x, curr._view.y);
+				ctx.lineTo(curr._view.x, curr._view.y);
+				prev = curr;
+				continue;
+			}
+			if (curr._view.steppedLine === true) {
+				ctx.lineTo(curr._view.x, prev._view.y);
+				ctx.lineTo(curr._view.x, curr._view.y);
+				prev = curr;
+				continue;
+			}
+			if (curr._view.tension === 0) {
+				ctx.lineTo(curr._view.x, curr._view.y);
+				prev = curr;
+				continue;
+			}
+
+			ctx.bezierCurveTo(
+			  prev._view.controlPointNextX,
+			  prev._view.controlPointNextY,
+			  curr._view.controlPointPreviousX,
+			  curr._view.controlPointPreviousY,
+			  curr._view.x,
+			  curr._view.y
+			);
+			prev = curr;
+		}
+
+		// connect set1 to set2 then BACKWORDS trace set2 line
+		for (var i = meta2.data.length - 1; i >= 0; i--) {
+			curr = meta2.data[i];
+			if (i === meta2.data.length - 1) {
+				ctx.lineTo(curr._view.x, curr._view.y);
+				prev = curr;
+				continue;
+			}
+			if (curr._view.steppedLine === true) {
+				ctx.lineTo(prev._view.x, curr._view.y);
+				ctx.lineTo(curr._view.x, curr._view.y);
+				prev = curr;
+				continue;
+			}
+			if (curr._view.tension === 0) {
+				ctx.lineTo(curr._view.x, curr._view.y);
+				prev = curr;
+				continue;
+			}
+
+			// reverse bezier
+			ctx.bezierCurveTo(
+			  prev._view.controlPointPreviousX,
+			  prev._view.controlPointPreviousY,
+			  curr._view.controlPointNextX,
+			  curr._view.controlPointNextY,
+			  curr._view.x,
+			  curr._view.y
+			);
+			prev = curr;
+		}
+
+		ctx.closePath();
+		ctx.fillStyle = "rgba(0,0,0,0.2)";
+		ctx.fill();
+		//ctx.stroke();
+		ctx.restore();
+	}
+}
+
+Chart.pluginService.register(fillBetweenLinesPlugin);
+chart.update()
+`
+
+func vsFromMs(ms [][2]float64, mult int) *vs {
+	n := 8
+	v := vs{xs: make([]float64, 0, len(ms)), ys: make([]float64, 0, len(ms))}
+	if len(ms) < n {
+		return &v
+	}
+	for i, m := range ms[:len(ms)-n-1] {
+		if i == 0 || i%n != 0 {
+			continue
+		}
+		y := m[0] + float64(mult)*m[1]
+		for k := -n; k < n; k++ {
+			y += ms[i-k][0] + float64(mult)*ms[i-k][1]
+		}
+		y /= float64(2*n + 1)
+
+		v.xs = append(v.xs, float64(i*16384))
+		if y > cnMax {
+			y = cnMax
+		} else if y < 0 {
+			y = 0
+		}
+		v.ys = append(v.ys, y)
+	}
+	return &v
+}
+
 func plotDepths(depths [][]float32, samples []string, chrom string, base string, longesti int) error {
 	chart := chartjs.Chart{Label: chrom}
 	xa, err := chart.AddXAxis(chartjs.Axis{Type: chartjs.Linear, Position: chartjs.Bottom, ScaleLabel: &chartjs.ScaleLabel{FontSize: 16, LabelString: "position on " + chrom, Display: chartjs.True}})
@@ -146,6 +270,8 @@ func plotDepths(depths [][]float32, samples []string, chrom string, base string,
 	}
 
 	ms := meanStds(depths, longesti)
+	xystop := vsFromMs(ms, 3)
+	xysbot := vsFromMs(ms, -3)
 
 	for i, depth := range depths {
 
@@ -167,12 +293,28 @@ func plotDepths(depths [][]float32, samples []string, chrom string, base string,
 	}
 	chart.Options.Responsive = chartjs.False
 	chart.Options.Tooltip = &chartjs.Tooltip{Mode: "nearest"}
+	chart.Options.Legend = &chartjs.Legend{Display: chartjs.False}
+
+	gray := &types.RGBA{R: 0, G: 0, B: 0, A: 0}
+	dtop := chartjs.Dataset{Data: xystop, Label: "mean +/- 3 stds", Fill: chartjs.False, PointRadius: 0, BorderWidth: 0,
+		BorderColor: gray, BackgroundColor: gray, SteppedLine: chartjs.False, PointHitRadius: 0}
+	dtop.XAxisID = xa
+	dtop.YAxisID = ya
+	chart.AddDataset(dtop)
+
+	dbot := chartjs.Dataset{Data: xysbot, Label: "mean +/- 3 stds", Fill: chartjs.False, PointRadius: 0, BorderWidth: 0,
+		BorderColor: gray, BackgroundColor: gray, SteppedLine: chartjs.False, PointHitRadius: 0}
+	dbot.XAxisID = xa
+	dbot.YAxisID = ya
+	chart.AddDataset(dbot)
+
 	wtr, err := os.Create(fmt.Sprintf("%s-depth-%s.html", base, chrom))
 	if err != nil {
 		return err
 	}
 	link := template.HTML(`<a href="index.html">back to index</a>`)
-	if err := chart.SaveHTML(wtr, map[string]interface{}{"width": 850, "height": 550, "customHTML": link}); err != nil {
+
+	if err := chart.SaveHTML(wtr, map[string]interface{}{"width": 850, "height": 550, "customHTML": link, "custom": template.JS(tjs)}); err != nil {
 		return err
 	}
 	if err := wtr.Close(); err != nil {
