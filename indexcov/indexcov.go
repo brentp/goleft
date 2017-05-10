@@ -572,7 +572,7 @@ func run(refs []*sam.Reference, idxs []*Index, names []string, base string) (map
 				link := `<a href="index.html">back to index</a>`
 				saveCharts(fmt.Sprintf("%s-roc-%s.html", base, chrom), "", link, c)
 				chartjs.XFloatFormat = tmp
-				asPng(fmt.Sprintf("%s-roc-%s.png", base, chrom), c, 4, 3)
+				asPng(fmt.Sprintf("%s-roc-%s.png", base, chrom), c, 4, 3, false)
 			}
 		}
 	}

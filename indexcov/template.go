@@ -172,7 +172,7 @@ Click the <span class="help">?</span> above each plot for help describing that t
 	{{ range $idx, $chrom := $chroms }}
 		<p>
 {{ if $notmany }}
-		<a href="{{ $name }}-indexcov-depth-{{ $chrom }}.html"><img src="{{ $name }}-indexcov-depth-{{ $chrom }}.png" /></a>
+		<a href="{{ $name }}-indexcov-depth-{{ $chrom }}.html"><img src="{{ $name }}-indexcov-depth-{{ $chrom }}.svg" /></a>
 {{ else }}
 		<img src="{{ $name }}-indexcov-depth-{{ $chrom }}.png" />
 {{ end }}

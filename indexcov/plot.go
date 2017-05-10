@@ -12,6 +12,7 @@ import (
 
 	chartjs "github.com/brentp/go-chartjs"
 	"github.com/brentp/go-chartjs/types"
+	fill "github.com/brentp/gonum-plot-fillbetween"
 	"github.com/gonum/matrix/mat64"
 	"github.com/gonum/plot"
 	"github.com/gonum/plot/plotter"
@@ -71,14 +72,15 @@ func asValues(vals []float32, multiplier float64, allowSkip bool) chartjs.Values
 		if r == 0 && !seenNonZero {
 			continue
 		}
-		if allowSkip && ((r < 1.15 && r > 0.85) || r == math.MaxFloat32) {
+		seenNonZero = true
+		//if allowSkip && ((r < 1.15 && r > 0.85) || r == math.MaxFloat32) {
+		if allowSkip && r == math.MaxFloat32 {
 			if lastIn && i < len(vals)-1 && ((float64(vals[i+1]) > 0.85 && float64(vals[i+1]) < 1.15) || vals[i+1] == math.MaxFloat32) {
 				continue
 			}
 			lastIn = true
 		} else {
 			lastIn = false
-			seenNonZero = true
 		}
 		v.xs = append(v.xs, float64(i)*multiplier)
 		if r > cnMax {
@@ -96,9 +98,9 @@ func asValues(vals []float32, multiplier float64, allowSkip bool) chartjs.Values
 func randomColor(s int) *types.RGBA {
 	rand.Seed(int64(s))
 	return &types.RGBA{
-		R: uint8(rand.Intn(256)),
-		G: uint8(rand.Intn(256)),
-		B: uint8(rand.Intn(256)),
+		R: uint8(12 + rand.Intn(206)),
+		G: uint8(12 + rand.Intn(206)),
+		B: uint8(12 + rand.Intn(206)),
 		A: 240}
 }
 
@@ -139,7 +141,7 @@ var fillBetweenLinesPlugin = {
 		var meta2 = chart.getDatasetMeta(datasets.length-1)
 
 		ctx.lineWidth = 0.5;
-		ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+		ctx.strokeStyle = 'rgba(200,200,200,0.9)';
 		ctx.beginPath();
 
 		// vars for tracing
@@ -210,7 +212,7 @@ var fillBetweenLinesPlugin = {
 		}
 
 		ctx.closePath();
-		ctx.fillStyle = "rgba(0,0,0,0.2)";
+		ctx.fillStyle = 'rgba(200,200,200,0.9)';
 		ctx.fill();
 		//ctx.stroke();
 		ctx.restore();
@@ -222,7 +224,7 @@ chart.update()
 `
 
 func vsFromMs(ms [][2]float64, mult int) *vs {
-	n := 8
+	n := 30
 	v := vs{xs: make([]float64, 0, len(ms)), ys: make([]float64, 0, len(ms))}
 	if len(ms) < n {
 		return &v
@@ -314,13 +316,13 @@ func plotDepths(depths [][]float32, samples []string, chrom string, base string,
 	}
 	link := template.HTML(`<a href="index.html">back to index</a>`)
 
-	if err := chart.SaveHTML(wtr, map[string]interface{}{"width": 850, "height": 550, "customHTML": link, "custom": template.JS(tjs)}); err != nil {
+	if err := chart.SaveHTML(wtr, map[string]interface{}{"width": 1050, "height": 700, "customHTML": link, "custom": template.JS(tjs)}); err != nil {
 		return err
 	}
 	if err := wtr.Close(); err != nil {
 		return err
 	}
-	asPng(fmt.Sprintf("%s-depth-%s.png", base, chrom), chart, 4, 3)
+	asPng(fmt.Sprintf("%s-depth-%s.svg", base, chrom), chart, 4, 3, true)
 
 	return nil
 }
@@ -584,7 +586,7 @@ func plotSex(sexes map[string][]float64, chroms []string, samples []string) (*ch
 	return &chart, jsfunc, nil
 }
 
-func asPng(path string, chart chartjs.Chart, wInches float64, hInches float64) {
+func asPng(path string, chart chartjs.Chart, wInches float64, hInches float64, between bool) {
 	p, err := plot.New()
 	if err != nil {
 		panic(err)
@@ -622,6 +624,21 @@ func asPng(path string, chart chartjs.Chart, wInches float64, hInches float64) {
 			p.Add(l)
 		}
 	}
+	if between {
+		L := len(chart.Data.Datasets)
+		d := chart.Data.Datasets[L-1].Data
+		a := &vs{xs: d.Xs(), ys: d.Ys()}
+		d = chart.Data.Datasets[L-2].Data
+		b := &vs{xs: d.Xs(), ys: d.Ys()}
+
+		btw, err := fill.NewBetween(a, b)
+		if err != nil {
+			panic(err)
+		}
+		btw.ShadeColor = color.RGBA{200, 200, 200, 0}
+		p.Add(btw)
+	}
+
 	data := chart.Data.Datasets[0].Data.(*vs)
 	xs := data.Xs()
 	// check if we are in a depth plot
