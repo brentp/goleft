@@ -122,6 +122,10 @@ func ReadIndex(r io.Reader) (*Index, error) {
 		if err != nil {
 			return nil, fmt.Errorf("crai: unable to parse seqID (%s) at line %d", parts[0], iline)
 		}
+		if si == -1 {
+			// TODO: handle unmapped.
+			continue
+		}
 		for i := len(idx.Slices); i <= si; i++ {
 			idx.Slices = append(idx.Slices, make([]Slice, 0, 16))
 		}
