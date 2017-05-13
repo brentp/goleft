@@ -37,14 +37,14 @@ assert_exit_code 255
 assert_in_stderr "error: bam is required"
 
 
+
 get sample_name_0001.bam
 rm -rf /tmp/tt
 run check_single_sample ./goleft_test indexcov -d /tmp/tt sample_name_0001.bam
 assert_exit_code 0
 assert_in_stderr "not plotting"
 assert_equal $(num_colcounts /tmp/tt/tt-indexcov.ped) 1
-assert_equal $(zgrep -wc ^1 /tmp/tt-indexcov.bed.gz ) 14748
-
+assert_equal $(zgrep -wc ^1 /tmp/tt/tt-indexcov.bed.gz ) 14748
 
 
 run check_sex ./goleft_test indexcov -d /tmp/tt --sex "X,Y" sample_name_0001.bam
@@ -88,10 +88,6 @@ if [[ ! -e human_g1k_v37.fasta.fai ]]; then
     wget -q ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/technical/reference/human_g1k_v37.fasta.fai
 fi
 
-#export INDEXCOV_FMT=svg
-run check_cohort ./goleft_test indexcov -d /tmp/tt samples/*.bam
-assert_exit_code 0
-assert_equal $(num_colcounts /tmp/tt/tt-indexcov.ped) 1
 
 
 rm -f /tmp/tt/tt-indexcov.bed.gz
@@ -105,3 +101,7 @@ assert_exit_code 0
 assert_in_stderr "index.html for overview"
 assert_equal $(num_colcounts /tmp/1kg/1kg-indexcov.ped) 1
 
+#export INDEXCOV_FMT=svg
+run check_cohort ./goleft_test indexcov -d /tmp/tt samples/*.bam
+assert_exit_code 0
+assert_equal $(num_colcounts /tmp/tt/tt-indexcov.ped) 1

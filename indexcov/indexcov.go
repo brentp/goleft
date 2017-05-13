@@ -26,6 +26,7 @@ import (
 	"github.com/brentp/go-chartjs/types"
 	"github.com/brentp/goleft"
 	"github.com/brentp/goleft/indexcov/crai"
+	"github.com/brentp/goleft/samplename"
 	"github.com/gonum/floats"
 	"github.com/gonum/matrix/mat64"
 	"github.com/gonum/stat"
@@ -180,8 +181,6 @@ func getRef(b *bam.Reader, chrom string) *sam.Reference {
 }
 
 func GetShortName(b string, isCrai bool) (string, error) {
-	// TODO: replace this with samplename.Names()
-
 	if !isCrai {
 		fh, err := os.Open(b)
 		if err != nil {
@@ -193,15 +192,12 @@ func GetShortName(b string, isCrai bool) (string, error) {
 			return "", err
 		}
 		defer br.Close()
-		m := make(map[string]bool)
-		for _, rg := range br.Header().RGs() {
-			m[rg.Get(sam.Tag([2]byte{'S', 'M'}))] = true
+		names := samplename.Names(br.Header())
+		if len(names) == 1 {
+			return names[0], nil
 		}
-		if len(m) > 1 {
+		if len(names) > 1 {
 			return "", fmt.Errorf("bam reagroup: more than one RG for %s", b)
-		}
-		for sm := range m {
-			return sm, nil
 		}
 	}
 	vs := strings.Split(b, "/")

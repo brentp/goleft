@@ -225,6 +225,17 @@ Chart.pluginService.register(fillBetweenLinesPlugin);
 chart.update()
 `
 
+func truncate(val, min, max float64) float64 {
+	if val < min {
+		val = min
+	} else if val > max {
+		val = max
+	}
+	return val
+}
+
+// create a moving average of the values we're looking at.
+// we truncate to (0, cnMax).
 func vsFromMs(ms [][2]float64, mult int) *vs {
 	n := 30
 	v := vs{xs: make([]float64, 0, len(ms)), ys: make([]float64, 0, len(ms))}
@@ -242,12 +253,14 @@ func vsFromMs(ms [][2]float64, mult int) *vs {
 		y /= float64(2*n + 1)
 
 		v.xs = append(v.xs, float64(i*16384))
-		if y > cnMax {
-			y = cnMax
-		} else if y < 0 {
-			y = 0
-		}
-		v.ys = append(v.ys, y)
+		v.ys = append(v.ys, truncate(y, 0, cnMax))
+	}
+
+	for k, m := range ms[len(ms)-n-1:] {
+		i := k + len(ms) - n - 1
+		v.xs = append(v.xs, float64(i*16384))
+		y := m[0] + float64(mult)*m[1]
+		v.ys = append(v.ys, truncate(y, 0, cnMax))
 	}
 	return &v
 }
