@@ -20,6 +20,8 @@ import (
 	"github.com/gonum/stat"
 )
 
+const summaryNumber = 40
+
 type vs struct {
 	xs []float64
 	ys []float64
@@ -279,12 +281,12 @@ func plotDepths(depths [][]float32, samples []string, chrom string, base string,
 
 		for k, d := range depth {
 			msk := ms[k]
-			if math.Abs(stat.StdScore(float64(d), msk[0], msk[1])) < 3 {
+			if len(depths) > summaryNumber && math.Abs(stat.StdScore(float64(d), msk[0], msk[1])) < 3 {
 				depth[k] = math.MaxFloat32
 			}
 		}
 
-		xys := asValues(depth, 16384, true)
+		xys := asValues(depth, 16384, len(depths) > summaryNumber)
 		//log.Println(chrom, samples[i], len(xys.Xs()))
 		c := randomColor(i)
 		dataset := chartjs.Dataset{Data: xys, Label: samples[i], Fill: chartjs.False, PointRadius: 0, BorderWidth: w,
@@ -624,7 +626,8 @@ func asPng(path string, chart chartjs.Chart, wInches float64, hInches float64, b
 			p.Add(l)
 		}
 	}
-	if between {
+
+	if between && len(chart.Data.Datasets) > summaryNumber {
 		L := len(chart.Data.Datasets)
 		d := chart.Data.Datasets[L-1].Data
 		a := &vs{xs: d.Xs(), ys: d.Ys()}
