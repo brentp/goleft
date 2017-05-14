@@ -445,7 +445,7 @@ func readIndex(r rdi) (*Index, string, int) {
 }
 
 // if there are more samples than this then the depth plots won't be drawn.
-const maxSamples = 100
+const maxSamples = 1500
 
 func sameChrom(as []string, b string) bool {
 	for _, a := range as {

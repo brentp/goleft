@@ -89,6 +89,7 @@ func asValues(vals []float32, multiplier float64, allowSkip bool) chartjs.Values
 			r = cnMax
 		}
 		if lastIn {
+			// we set values inside of the mean+/$N sds to NaN()
 			v.ys = append(v.ys, math.NaN())
 		} else {
 			v.ys = append(v.ys, float64(r))
@@ -608,17 +609,21 @@ func asPng(path string, chart chartjs.Chart, wInches float64, hInches float64, b
 	}
 	p.X.Label.Text = chart.Options.Scales.XAxes[0].ScaleLabel.LabelString
 	p.Y.Label.Text = chart.Options.Scales.YAxes[0].ScaleLabel.LabelString
-	for i := range chart.Data.Datasets {
-		ds := chart.Data.Datasets[len(chart.Data.Datasets)-i-1]
+	datasets := chart.Data.Datasets
+	if between {
+		// if between, we have the 2 extra plots for the bounds
+		datasets = datasets[:len(datasets)-2]
+	}
+	for i := range datasets {
+		ds := datasets[len(datasets)-i-1]
 		data := ds.Data
 		lastk, k := 0, 0
 		ys := data.Ys()
-		for i < len(data.Xs()) {
+		for k < len(data.Xs()) {
 			// gonum can't handle nans so we plot discontiguous data by splitting at NaN()
 			for k < len(ys) && !math.IsNaN(ys[k]) {
 				k++
 			}
-			i = k
 
 			vss := &vs{xs: data.Xs()[lastk:k], ys: data.Ys()[lastk:k]}
 			k++
@@ -631,7 +636,7 @@ func asPng(path string, chart chartjs.Chart, wInches float64, hInches float64, b
 			c := color.RGBA(*ds.BorderColor)
 			c.A = 255
 			l.LineStyle.Width = vg.Points(0.8)
-			if len(chart.Data.Datasets) > 30 {
+			if len(datasets) > 30 {
 				l.LineStyle.Width = vg.Points(0.65)
 			}
 
@@ -640,7 +645,7 @@ func asPng(path string, chart chartjs.Chart, wInches float64, hInches float64, b
 		}
 	}
 
-	if between && len(chart.Data.Datasets) > summaryNumber {
+	if between && len(datasets) > summaryNumber {
 		L := len(chart.Data.Datasets)
 		d := chart.Data.Datasets[L-1].Data
 		a := &vs{xs: d.Xs(), ys: d.Ys()}
