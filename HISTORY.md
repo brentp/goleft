@@ -1,3 +1,7 @@
+v0.1.17
+=======
++ `indexcov`: dont error when no sex chromosomes are found (#27).
+
 v0.1.16
 =======
 + `indexcov`: report and plot number of mapped and unmapped reads as reported by the index.
