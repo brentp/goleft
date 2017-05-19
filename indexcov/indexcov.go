@@ -738,7 +738,7 @@ func writeIndex(sexes map[string][]float64, counts []*counter, keys []string, sa
 	var sexChart *chartjs.Chart
 	var sexjs string
 
-	if len(keys) > 1 {
+	if len(keys) > 1 && len(sexes) > 1 {
 		sexChart, sexjs, err = plotSex(sexes, keys[:2], samples)
 		if err != nil {
 			panic(err)

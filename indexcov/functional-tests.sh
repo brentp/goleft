@@ -31,6 +31,11 @@ num_colcounts() {
 export -f num_colcounts
 
 
+run check_empty ./goleft_test indexcov -d /tmp/tt test-data/sample_issue_27_0001.bam
+assert_exit_code 0
+rm -rf /tmp/tt
+
+
 export -f check_nobams
 run check_no_bams ./goleft_test indexcov -d /tmp/tt
 assert_exit_code 255
@@ -43,7 +48,7 @@ run check_single_sample ./goleft_test indexcov -d /tmp/tt sample_name_0001.bam
 assert_exit_code 0
 assert_in_stderr "not plotting"
 assert_equal $(num_colcounts /tmp/tt/tt-indexcov.ped) 1
-assert_equal $(zgrep -wc ^1 /tmp/tt-indexcov.bed.gz ) 14748
+assert_equal $(zgrep -wc ^1 /tmp/tt/tt-indexcov.bed.gz ) 14748
 
 
 
