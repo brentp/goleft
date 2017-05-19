@@ -36,10 +36,7 @@ func main() {
 		defer br.Close()
 
 		rgs := br.Header().RGs()
-		hdr, err := sam.NewHeader(nil, br.Header().Refs())
-		if err != nil {
-			panic(err)
-		}
+		hdr := br.Header().Clone()
 		if len(rgs) == 0 {
 			fmt.Fprintf(os.Stderr, "no readgroups in %s\n", os.Args[i])
 		}
