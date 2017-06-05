@@ -29,7 +29,9 @@ for i, (a, b) in enumerate(it.izip(gen(fha), gen(fhb))):
     if xs[-1] < 0.05 and ys[-1] > 20:
         print(a, b)
 
-fig, axes = plt.subplots(1)
+plt.rc('ytick', labelsize=16)
+plt.rc('xtick', labelsize=16)
+fig, axes = plt.subplots(1, figsize=(18, 14))
 axes = (axes,)
 
 ys = np.array(ys)
@@ -41,13 +43,20 @@ out = sum(abs(d) > 0.5 for d in diff)
 print "out:", out, "total:", len(diff),  ("%.2f" % (100.0*out/len(diff)))
 
 print sum(abs(d) < 0.25 for d in diff) / float(len(diff))
+print sum(abs(d) < 0.1 for d in diff) / float(len(diff))
 diff = diff[np.abs(diff) < 0.5]
 
-axes[0].hist(diff, 20)
+axes[0].hist(diff, 40)
 axes[0].set_xlim(-0.5, 0.5)
-axes[0].set_xlabel("Difference in depth estimate (indexcov - samtools)")
-axes[0].set_ylabel("Count")
+axes[0].set_xlabel("Difference in depth estimate (indexcov - samtools)",
+        fontsize=20)
+axes[0].set_ylabel("Number of Tiles", fontsize=20)
+
+
+#ax = axes[0]
+#for label in (ax.get_xticklabels() + ax.get_yticklabels()):
+#    label.set_fontsize(15)
 
 d = "/uufs/chpc.utah.edu/common/home/u6000771/public_html/"
-plt.savefig(d + "t.png")
+plt.savefig(d + "figure-1.eps")
 plt.show()
