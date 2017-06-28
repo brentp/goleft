@@ -1,6 +1,8 @@
 indexcov
 ========
 
+<img src="https://user-images.githubusercontent.com/1739/27659909-5e905a1e-5c12-11e7-91dc-ea882f202718.png" style="width:287px;height:168px">
+
 Quickly estimate coverage from a *whole-genome* bam or [**cram**](#CRAM) index. 
 A bam index has 16KB resolution so that's what this gives, but it provides what appears to be a high-quality 
 coverage estimate in seconds per genome.
