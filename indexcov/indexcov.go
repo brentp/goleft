@@ -47,7 +47,7 @@ var cli = &struct {
 }{Sex: "X,Y", ExcludePatt: `^chrEBV$|^NC|_random$|Un_|^HLA\-|_alt$|hap\d$`}
 
 // MaxCN is the maximum normalized value.
-var MaxCN = float32(6)
+var MaxCN = float32(8)
 
 // Index wraps a bam.Index to cache calculated values.
 type Index struct {
@@ -115,8 +115,8 @@ func (x *Index) NormalizedDepth(refID int) []float32 {
 	depths := make([]float32, 0, len(ref))
 	for i, o := range ref {
 		depths = append(depths, float32(float64(o)/x.medianSizePerTile))
-		if depths[i] > MaxCN {
-			depths[i] = MaxCN
+		if depths[i] > 50000 {
+			depths[i] = 50000
 		}
 	}
 	return depths
@@ -532,6 +532,10 @@ func run(refs []*sam.Reference, idxs []*Index, names []string, base string) (map
 			CountsAtDepth(depths[k], counts[k])
 		}
 
+		for i := 0; i < len(depths[longesti]); i++ {
+			fmt.Fprintf(bgz, "%s\t%d\t%d\t%s\n", chrom, i*16384, (i+1)*16384, depthsFor(depths, i))
+		}
+
 		isSex := sameChrom(cli.sex, chrom)
 		if isSex {
 			if len(depths[longesti]) > 0 {
@@ -539,21 +543,25 @@ func run(refs []*sam.Reference, idxs []*Index, names []string, base string) (map
 			}
 		} else {
 			// now add non-sex chromosomes to the pca data since we know the longest.
+			var dp float32
 			for k := range idxs {
 				var i int
-				for i = 0; i < len(depths[k]); i++ {
-					pca8[k] = append(pca8[k], uint8(65535/MaxCN*depths[k][i]+0.5))
+				dps := depths[k]
+				for i, dp = range dps {
+					// := depths[k][i]
+					if dp > MaxCN {
+						dp = MaxCN
+						depths[k][i] = dp
+					}
+					pca8[k] = append(pca8[k], uint8(65535/MaxCN*dp+0.5))
 				}
 				for ; i < longest; i++ {
 					pca8[k] = append(pca8[k], 0)
 				}
-				offs[k].count(depths[k], longest)
+				offs[k].count(dps, longest)
 			}
 		}
 
-		for i := 0; i < len(depths[longesti]); i++ {
-			fmt.Fprintf(bgz, "%s\t%d\t%d\t%s\n", chrom, i*16384, (i+1)*16384, depthsFor(depths, i))
-		}
 		if len(depths[longesti]) > 0 {
 			c, rocs := writeROCs(counts, names, chrom, rfh)
 			// only plot those with at least 3 regions.
@@ -759,6 +767,7 @@ func writeIndex(sexes map[string][]float64, counts []*counter, keys []string, sa
 	if err != nil {
 		panic(err)
 	}
+	asPng(fmt.Sprintf("%s-sex.png", getBase(directory)), *sexChart, 6, 6)
 
 	chartMap := map[string]interface{}{"pcajs": template.JS(pcajs), "pcbjs": template.JS(pcajs),
 		"template": chartTemplate,
