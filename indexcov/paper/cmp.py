@@ -1,0 +1,94 @@
+import sys
+import gzip
+import itertools as it
+import numpy as np
+import scipy.stats as ss
+from matplotlib import pyplot as plt
+import seaborn as sns
+sns.set_style('whitegrid')
+
+fha = (gzip.open if sys.argv[1].endswith(".gz") else open)(sys.argv[1])
+fhb = (gzip.open if sys.argv[2].endswith(".gz") else open)(sys.argv[2])
+
+LCR = len(sys.argv) > 3 and sys.argv[3] == "LCR"
+
+def gen(fh):
+    for line in fh:
+        toks = line.rstrip().split("\t")
+        toks[1], toks[2] = int(toks[1]), int(toks[2])
+        toks[3] = float(toks[3])
+        yield toks
+
+xs, ys = [], []
+lcr = []
+ras = []
+rbs = []
+
+
+for i, (a, b) in enumerate(it.izip(gen(fha), gen(fhb))):
+
+    if a[1] != b[1]:
+        raise Exception("expected same positions for both files")
+
+    xs.append(a[3])
+    ys.append(b[3])
+    if LCR:
+        assert b[4] == a[4]
+        lcr.append(b[4] != '0')
+    ras.append(a)
+    rbs.append(b)
+    #if not lcr[-1]:
+    #  print(abs(xs[-1] - ys[-1]), lcr[-1])
+
+plt.rc('ytick', labelsize=16)
+plt.rc('xtick', labelsize=16)
+fig, axes = plt.subplots(1, figsize=(18, 14))
+axes = (axes,)
+
+ras, rbs = np.array(ras), np.array(rbs)
+
+lcr = np.array(lcr)
+
+ys = np.array(ys)
+ys /= np.median(ys)
+xs = np.array(xs)
+
+if LCR:
+    xs = xs[~lcr]
+    ys = ys[~lcr]
+    ras = ras[~lcr]
+    rbs = rbs[~lcr]
+
+
+diff = xs - ys
+print diff[np.abs(diff) > 0.5]
+for a, b, d, sc in zip(ras[np.abs(diff)>0.5].tolist(),
+        rbs[np.abs(diff)>0.5].tolist(), diff[np.abs(diff) > 0.5],
+        ys[np.abs(diff) > 0.5]):
+    print a, b, d, sc
+out = sum(abs(d) > 0.5 for d in diff)
+print "out:", out, "total:", len(diff),  ("%.2f" % (100.0*out/len(diff)))
+print "max diff:", np.abs(diff).max()
+print "corr:", np.corrcoef(xs, ys)[0, 1]
+from scipy.stats import spearmanr
+print "spearman corr:", spearmanr(xs, ys)[0]
+
+print sum(abs(d) < 0.25 for d in diff) / float(len(diff))
+print sum(abs(d) < 0.1 for d in diff) / float(len(diff))
+sdiff = diff[np.abs(diff) < 0.5]
+
+axes[0].hist(sdiff, 40)
+axes[0].set_xlim(-0.5, 0.5)
+axes[0].set_xlabel("Difference in depth estimate (indexcov - samtools)",
+        fontsize=20)
+axes[0].set_ylabel("Number of Tiles", fontsize=20)
+out = (np.abs(diff) > 0.5).sum()
+
+
+#ax = axes[0]
+#for label in (ax.get_xticklabels() + ax.get_yticklabels()):
+#    label.set_fontsize(15)
+
+d = "/uufs/chpc.utah.edu/common/home/u6000771/public_html/"
+plt.savefig(d + "figure-1.eps")
+plt.show()
