@@ -1,6 +1,7 @@
 v0.1.17
 =======
 + `indexcov`: dont error when no sex chromosomes are found (#27).
++ `indexcov`: dont error when some chromosomes have a single region and others have 0.
 
 v0.1.16
 =======

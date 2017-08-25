@@ -272,7 +272,6 @@ func ReadFai(path string, chrom string) []*sam.Reference {
 	if len(refs) == 0 {
 		if chrom != "" {
 			log.Printf("ERROR: didn't find %s in %s", chrom, path)
-
 		}
 		panic(fmt.Sprintf("ERROR: didn't find any usable chromosomes in %s", path))
 	}
@@ -545,7 +544,7 @@ func run(refs []*sam.Reference, idxs []*Index, names []string, base string) (map
 			// now add non-sex chromosomes to the pca data since we know the longest.
 			var dp float32
 			for k := range idxs {
-				var i int
+				i := -1 // initalize to -1 to differentiate from never entering loop.
 				dps := depths[k]
 				for i, dp = range dps {
 					// := depths[k][i]
@@ -767,7 +766,9 @@ func writeIndex(sexes map[string][]float64, counts []*counter, keys []string, sa
 	if err != nil {
 		panic(err)
 	}
-	asPng(fmt.Sprintf("%s-sex.png", getBase(directory)), *sexChart, 6, 6)
+	if sexChart != nil {
+		asPng(fmt.Sprintf("%s-sex.png", getBase(directory)), *sexChart, 6, 6)
+	}
 
 	chartMap := map[string]interface{}{"pcajs": template.JS(pcajs), "pcbjs": template.JS(pcajs),
 		"template": chartTemplate,
