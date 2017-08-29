@@ -100,7 +100,7 @@ func sFromLine(l string) depth {
 		end:   mustAtoi(toks[2]),
 	}
 
-	d.depth = int(0.5 + dep*float64(d.end-d.start))
+	d.depth = int(0.5 + dep) //*float64(d.end-d.start))
 	return d
 
 }
