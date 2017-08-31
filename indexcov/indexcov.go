@@ -811,14 +811,23 @@ func GetCN(depths [][]float32) []float64 {
 	meds := make([]float64, 0, len(depths))
 	for _, d := range depths {
 		tmp := make([]float32, 0, len(d))
+		lows := 0
 		for _, dp := range d {
 			// exclude sites that are exactly 0 as these are the centromere.
 			if dp != 0 {
 				tmp = append(tmp, dp)
+				if dp < 0.02 {
+					lows++
+				}
 			}
 		}
 		if len(tmp) > 0 {
 			sort.Slice(tmp, func(i, j int) bool { return tmp[i] < tmp[j] })
+			// e.g. on Y, there are so many very low values in males and females that we have to filter...
+			pLo := float64(lows) / float64(len(d))
+			if pLo > 0.3 {
+				tmp = tmp[lows:]
+			}
 			med := float64(float32(Ploidy) * tmp[int(float64(len(tmp))*0.5)])
 			meds = append(meds, med)
 		} else {
