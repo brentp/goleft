@@ -21,7 +21,7 @@ var cli = struct {
 	N       int      `arg:"-n,help:number of reads to sample for length"`
 	Regions string   `arg:"-r,help:optional bed file to specify target regions"`
 	Bams    []string `arg:"positional,required,help:bam for which to estimate coverage"`
-}{N: 100000}
+}{N: 1000000}
 
 func pcheck(e error) {
 	if e != nil {
@@ -61,8 +61,8 @@ func meanStd(arr []int) (mean, std float64) {
 	return mean, math.Sqrt(std)
 }
 
-// Sizes hold info about a bam returned from BamInsertSizes
-type Sizes struct {
+// Stats hold info about a bam returned from `BamStats`
+type Stats struct {
 	InsertMean float64
 	InsertSD   float64
 	// 5th percentile of insert size
@@ -74,19 +74,23 @@ type Sizes struct {
 	ReadLengthMean   float64
 	ReadLengthMedian float64
 	// ProportionBad is the proportion of reads that were Dup|QCFail
-	ProportionBad      float64
-	ProportionUnmapped float64
+	ProportionBad            float64
+	ProportionUnmapped       float64
+	ProportionProperlyPaired float64
+	ProportionDuplicate      float64
+
+	MaxReadLength int
 }
 
-func (s Sizes) String() string {
+func (s Stats) String() string {
 	return fmt.Sprintf("%.2f\t%.2f\t%d\t%d\t%.2f\t%.2f", s.InsertMean, s.InsertSD, s.InsertPct5, s.InsertPct95, s.TemplateMean, s.TemplateSD)
 }
 
 // number of reads to skip to avoid crap at start of chrom
 const skipReads = 100000
 
-// BamInsertSizes takes bam reader sample N well-behaved sites and return the coverage and insert-size info
-func BamInsertSizes(br *bam.Reader, n int) Sizes {
+// BamStats takes bam reader sample N well-behaved sites and return the coverage and insert-size info
+func BamStats(br *bam.Reader, n int) Stats {
 	br.Omit(bam.AllVariableLengthData)
 	sizes := make([]int, 0, 2*n)
 	insertSizes := make([]int, 0, n)
@@ -98,6 +102,8 @@ func BamInsertSizes(br *bam.Reader, n int) Sizes {
 			log.Fatal("covmed: not enough reads to sample for bam stats")
 		}
 	}
+	s := Stats{}
+	var k int
 
 	for len(insertSizes) < n {
 		rec, err := br.Read()
@@ -109,13 +115,20 @@ func BamInsertSizes(br *bam.Reader, n int) Sizes {
 			nUnmapped++
 			continue
 		}
+		k++
 		if rec.Flags&(sam.Duplicate|sam.QCFail) != 0 {
+			if rec.Flags&sam.Duplicate != 0 {
+				s.ProportionDuplicate++
+			}
 			nBad++
 			continue
 		}
+		if rec.Flags&sam.ProperPair != 0 {
+			s.ProportionProperlyPaired++
+		}
 		if len(sizes) < 2*n {
 			_, read := rec.Cigar.Lengths()
-			sizes = append(sizes, read-1)
+			sizes = append(sizes, read)
 		} else {
 			// single end reads have no pairs so we have to skip.
 			if len(insertSizes) == 0 {
@@ -131,12 +144,15 @@ func BamInsertSizes(br *bam.Reader, n int) Sizes {
 
 	sort.Ints(sizes)
 
-	s := Sizes{}
 	if len(sizes) > 0 {
-		s.ProportionBad = float64(nBad) / float64(len(sizes)+nUnmapped)
-		s.ProportionUnmapped = float64(nUnmapped) / float64(len(sizes)+nBad)
+		s.ProportionBad = float64(nBad) / float64(k)
+		s.ProportionDuplicate = s.ProportionDuplicate / float64(k)
+		s.ProportionProperlyPaired = s.ProportionProperlyPaired / float64(k)
+		s.ProportionUnmapped = float64(nUnmapped) / float64(k)
 		s.ReadLengthMedian = float64(sizes[(len(sizes)-1)/2]) - 1
 		s.ReadLengthMean, _ = meanStd(sizes)
+		sort.Ints(sizes)
+		s.MaxReadLength = sizes[len(sizes)-1]
 	}
 
 	if len(insertSizes) > 0 {
@@ -153,7 +169,7 @@ func BamInsertSizes(br *bam.Reader, n int) Sizes {
 
 // Main is called from the dispatcher
 func Main() {
-	fmt.Fprintln(os.Stdout, "coverage\tinsert_mean\tinsert_sd\tinsert_5th\tinsert_95th\ttemplate_mean\ttemplate_sd\tpct_unmapped\tpct_bad_reads\tbam\tsample")
+	fmt.Fprintln(os.Stdout, "coverage\tinsert_mean\tinsert_sd\tinsert_5th\tinsert_95th\ttemplate_mean\ttemplate_sd\tpct_unmapped\tpct_bad_reads\tpct_duplicate\tpct_proper_pair\tread_length\tbam\tsample")
 
 	arg.MustParse(&cli)
 	for _, bamPath := range cli.Bams {
@@ -164,7 +180,10 @@ func Main() {
 		brdr, err := bam.NewReader(fh, 2)
 		pcheck(err)
 
-		names := samplename.Names(brdr.Header())
+		names := strings.Join(samplename.Names(brdr.Header()), ",")
+		if names == "" {
+			names = "<no-read-groups>"
+		}
 
 		ifh, ierr := os.Open(bamPath + ".bai")
 		if ierr != nil {
@@ -178,17 +197,21 @@ func Main() {
 
 		genomeBases := 0
 		mapped := uint64(0)
-		sizes := BamInsertSizes(brdr, cli.N)
+		sizes := BamStats(brdr, cli.N)
+		var notFound []string
 		for _, ref := range brdr.Header().Refs() {
 			genomeBases += ref.Len()
 			stats, ok := idx.ReferenceStats(ref.ID())
 			if !ok {
 				if !strings.Contains(ref.Name(), "random") && ref.Len() > 10000 {
-					fmt.Fprintf(os.Stderr, "chromosome: %s not found in %s\n", ref.Name(), bamPath)
+					notFound = append(notFound, ref.Name())
 				}
 				continue
 			}
 			mapped += stats.Mapped
+		}
+		if len(notFound) > 0 {
+			fmt.Fprintf(os.Stderr, "chromosomes: %s not found in %s\n", strings.Join(notFound, ","), bamPath)
 		}
 		if cli.Regions != "" {
 			genomeBases = readCoverage(cli.Regions)
@@ -197,7 +220,10 @@ func Main() {
 		// TODO: check that reads are from coverage regions.
 		coverage := (1 - sizes.ProportionBad) * float64(mapped) * sizes.ReadLengthMean / float64(genomeBases)
 
-		fmt.Fprintf(os.Stdout, "%.2f\t%s\t%.2f\t%.1f\t%s\t%s\n", coverage, sizes.String(), 100*sizes.ProportionUnmapped,
-			100*sizes.ProportionBad, bamPath, strings.Join(names, ","))
+		fmt.Fprintf(os.Stdout, "%.2f\t%s\t%.2f\t%.1f\t%.1f\t%.1f\t%d\t%s\t%s\n", coverage, sizes.String(), 100*sizes.ProportionUnmapped,
+			100*sizes.ProportionBad,
+			100*sizes.ProportionDuplicate,
+			100*sizes.ProportionProperlyPaired,
+			sizes.MaxReadLength, bamPath, names)
 	}
 }
