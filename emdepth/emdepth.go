@@ -64,7 +64,7 @@ func abs32(a float32) float32 {
 
 const maxCN = 8
 const maxiter = 10
-const eps = 0.001
+const eps = 0.01
 
 // used to test for convergence return the sum of abs differences
 // and the largest absolute difference.
@@ -81,7 +81,7 @@ func summaxdiff(a, b []float64) (float64, float64) {
 }
 
 func getBins(nSamples int) [][]float64 {
-	binned := make([][]float64, maxCN)
+	binned := make([][]float64, maxCN+1)
 	for i := 0; i < maxCN; i++ {
 		if i == 2 {
 			binned[i] = make([]float64, 0, nSamples)
@@ -118,7 +118,7 @@ func EMDepth(depths []float32, p Position) *EMD {
 
 	m := median32(depths)
 	// lambda are the centers of each CN
-	lambda := make([]float64, maxCN)
+	lambda := make([]float64, maxCN+1)
 	// put each sample into the bin they belong to.
 	// we re-use these since they can take a lot of mem.
 	binned := binPool.Get().([][]float64)
@@ -132,7 +132,9 @@ func EMDepth(depths []float32, p Position) *EMD {
 	// EXPECTATION:
 	// initialize centers of each bin relative to copy-number 2.
 	for i := 1; i < len(lambda); i++ {
-		lambda[i] = lambda[2] * (float64(i) / 2)
+		if i != 2 {
+			lambda[i] = lambda[2] * math.Pow(float64(i)/2, 1.1)
+		}
 	}
 
 	// iterate at most maxiter times. stop early if the largest depth change
@@ -291,7 +293,7 @@ func (e *EMD) Type(d float32) int {
 func (e *EMD) adjustCN(cn int, depth float64) int {
 
 	// TODO: do this for all cn +/- 1.
-	if cn == 1 || cn == 3 {
+	if cn != 2 && cn < len(e.Lambda) {
 		dk := int(0.5 + depth)
 		o, o2 := pmf(dk, e.Lambda[cn]), pmf(dk, e.Lambda[2])
 		if o*0.9 < o2 {
@@ -355,7 +357,7 @@ func (c *Cache) Clear(p *Position) []*CNV {
 	//L := p.End - p.Start
 	for si, emd := range c.cnvs {
 		// not a big enough gap yet.
-		if p.Start-emd[len(emd)-1].Position.End < 300000 {
+		if p.Start-emd[len(emd)-1].Position.End < 30000 {
 			continue
 		}
 		if putative := makecnvs(emd, si); putative != nil {

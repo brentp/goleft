@@ -5,17 +5,20 @@ import (
 	"fmt"
 	"html/template"
 	"image/color"
+	"log"
 	"math"
 	"math/rand"
 	"os"
+	"strconv"
 	"strings"
+
+	"gonum.org/v1/gonum/mat"
+	"gonum.org/v1/plot"
+	"gonum.org/v1/plot/plotter"
+	"gonum.org/v1/plot/vg"
 
 	chartjs "github.com/brentp/go-chartjs"
 	"github.com/brentp/go-chartjs/types"
-	"github.com/gonum/matrix/mat64"
-	"github.com/gonum/plot"
-	"github.com/gonum/plot/plotter"
-	"github.com/gonum/plot/vg"
 )
 
 type vs struct {
@@ -79,7 +82,23 @@ func asValues(vals []float32, multiplier float64) chartjs.Values {
 	return &v
 }
 
-func randomColor(s int) *types.RGBA {
+// user can set environment variable INDEXCOV_N_BACKGROUNDS to a
+// number `n` so that the first `n` samples are given a gray color.
+var backgroundN int
+
+func init() {
+	if v := os.Getenv("INDEXCOV_N_BACKGROUNDS"); v != "" {
+		if i, err := strconv.Atoi(v); err == nil {
+			log.Printf("[indexcov] setting first %d samples as background", i)
+			backgroundN = i
+		}
+	}
+}
+
+func randomColor(s int, check bool) *types.RGBA {
+	if check && s < backgroundN {
+		return &types.RGBA{R: 180, G: 180, B: 180, A: 240}
+	}
 	rand.Seed(int64(s))
 	return &types.RGBA{
 		R: uint8(rand.Intn(256)),
@@ -108,16 +127,22 @@ func plotDepths(depths [][]float32, samples []string, chrom string, base string,
 	if len(depths) > 50 {
 		w = 0.2
 	}
+	datasets := make([]chartjs.Dataset, 0, len(depths))
+
 	for i, depth := range depths {
 		xys := asValues(depth, 16384)
 		//log.Println(chrom, samples[i], len(xys.Xs()))
-		c := randomColor(i)
+		c := randomColor(i, true)
 		dataset := chartjs.Dataset{Data: xys, Label: samples[i], Fill: chartjs.False, PointRadius: 0, BorderWidth: w,
 			BorderColor: c, BackgroundColor: c, SteppedLine: chartjs.True, PointHitRadius: 6}
 		dataset.XAxisID = xa
 		dataset.YAxisID = ya
-		chart.AddDataset(dataset)
+		datasets = append(datasets, dataset)
 	}
+	for i := len(datasets) - 1; i >= 0; i-- {
+		chart.AddDataset(datasets[i])
+	}
+
 	chart.Options.Responsive = chartjs.False
 	chart.Options.Tooltip = &chartjs.Tooltip{Mode: "nearest"}
 	if writeHTML {
@@ -157,23 +182,59 @@ func plotBins(counts []*counter, samples []string) (chartjs.Chart, string) {
 	if err != nil {
 		panic(err)
 	}
-	xys := &vs{xs: make([]float64, len(counts)), ys: make([]float64, len(counts))}
+	cxys := &vs{xs: make([]float64, 0, len(counts)), ys: make([]float64, 0, len(counts))}
+	bxys := &vs{xs: make([]float64, 0, len(counts)), ys: make([]float64, 0, len(counts))}
 	min, max := float64(1000000), float64(0)
 
 	for i, c := range counts {
+		xys := cxys
+		if i < backgroundN {
+			xys = bxys
+		}
 		tot := float64(c.in + c.out)
-		xys.xs[i] = float64(c.low) / tot
-		if xys.xs[i] > max {
-			max = xys.xs[i]
+		val := float64(c.low) / tot
+		xys.xs = append(xys.xs, val)
+		if val > max {
+			max = val
 		}
-		if xys.xs[i] < min {
-			min = xys.xs[i]
+		if val < min {
+			min = val
 		}
-		xys.ys[i] = float64(c.out) / tot
+		xys.ys = append(xys.ys, float64(c.out)/tot)
 	}
 	rng := max - min
 	chart.Options.Scales.XAxes[0].Tick.Min = min - 0.1*rng
 	chart.Options.Scales.XAxes[0].Tick.Max = max + 0.1*rng
+	if backgroundN > 0 {
+		plotBinsSet(&chart, bxys, &types.RGBA{R: 180, G: 180, B: 180, A: 240}, xa, ya)
+	}
+	plotBinsSet(&chart, cxys, c, xa, ya)
+
+	chart.Options.Responsive = chartjs.False
+	chart.Options.Tooltip = &chartjs.Tooltip{Mode: "nearest"}
+	chart.Options.Legend = &chartjs.Legend{Display: chartjs.False}
+	sjson, err := json.Marshal(samples[backgroundN:])
+	if err != nil {
+		panic(err)
+	}
+	jsfunc := fmt.Sprintf(`
+    bin_chart.options.tooltips.callbacks.title = function(tts, data) {
+        var names = %s
+		var has_backgrounds = %v
+        var out = []
+        tts.forEach(function(ti) {
+			if(has_backgrounds == (ti.datasetIndex == 1)) {
+                out.push(names[ti.index])
+	 	    } else {
+				out.push("background")
+			}
+        })
+        return out.join(",")
+    }`, sjson, backgroundN > 0)
+	return chart, jsfunc
+}
+
+func plotBinsSet(chart *chartjs.Chart, xys *vs, c *types.RGBA, xa string, ya string) {
 	dataset := chartjs.Dataset{Data: xys, Label: "samples", Fill: chartjs.False, PointHoverRadius: 6,
 		PointRadius: 4, BorderWidth: 0, BorderColor: &types.RGBA{R: 150, G: 150, B: 150, A: 150},
 		PointBackgroundColor: c, BackgroundColor: c, ShowLine: chartjs.False, PointHitRadius: 6}
@@ -182,26 +243,9 @@ func plotBins(counts []*counter, samples []string) (chartjs.Chart, string) {
 	dataset.XAxisID = xa
 	dataset.YAxisID = ya
 	chart.AddDataset(dataset)
-	chart.Options.Responsive = chartjs.False
-	chart.Options.Tooltip = &chartjs.Tooltip{Mode: "nearest"}
-	chart.Options.Legend = &chartjs.Legend{Display: chartjs.False}
-	sjson, err := json.Marshal(samples)
-	if err != nil {
-		panic(err)
-	}
-	jsfunc := fmt.Sprintf(`
-    bin_chart.options.tooltips.callbacks.title = function(tts, data) {
-        var names = %s
-        var out = []
-        tts.forEach(function(ti) {
-            out.push(names[ti.index])
-        })
-        return out.join(",")
-    }`, sjson)
-	return chart, jsfunc
 }
 
-func plotPCA(mat *mat64.Dense, samples []string, vars []float64) ([]chartjs.Chart, string) {
+func plotPCA(imat *mat.Dense, samples []string, vars []float64) ([]chartjs.Chart, string) {
 
 	var charts []chartjs.Chart
 	c := &types.RGBA{R: 110, G: 250, B: 59, A: 240}
@@ -223,7 +267,17 @@ func plotPCA(mat *mat64.Dense, samples []string, vars []float64) ([]chartjs.Char
 		if err != nil {
 			panic(err)
 		}
-		xys := &vs{xs: mat64.Col(nil, 0, mat), ys: mat64.Col(nil, pc-1, mat)}
+		if backgroundN > 0 {
+			c := &types.RGBA{R: 180, G: 180, B: 180, A: 240}
+			xys := &vs{xs: mat.Col(nil, 0, imat)[:backgroundN], ys: mat.Col(nil, pc-1, imat)[:backgroundN]}
+			dataset := chartjs.Dataset{Data: xys, Label: "samples", Fill: chartjs.False, PointHoverRadius: 6,
+				PointRadius: 4,
+				BorderWidth: 0, BorderColor: &types.RGBA{R: 150, G: 150, B: 150, A: 150}, PointBackgroundColor: c, BackgroundColor: c, ShowLine: chartjs.False, PointHitRadius: 6}
+			dataset.XAxisID = xa
+			dataset.YAxisID = ya
+			c1.AddDataset(dataset)
+		}
+		xys := &vs{xs: mat.Col(nil, 0, imat)[backgroundN:], ys: mat.Col(nil, pc-1, imat)[backgroundN:]}
 		dataset := chartjs.Dataset{Data: xys, Label: "samples", Fill: chartjs.False, PointHoverRadius: 6,
 			PointRadius: 4,
 			BorderWidth: 0, BorderColor: &types.RGBA{R: 150, G: 150, B: 150, A: 150}, PointBackgroundColor: c, BackgroundColor: c, ShowLine: chartjs.False, PointHitRadius: 6}
@@ -235,20 +289,25 @@ func plotPCA(mat *mat64.Dense, samples []string, vars []float64) ([]chartjs.Char
 		c1.Options.Tooltip = &chartjs.Tooltip{Mode: "nearest"}
 		charts = append(charts, c1)
 	}
-	sjson, err := json.Marshal(samples)
+	sjson, err := json.Marshal(samples[backgroundN:])
 	if err != nil {
 		panic(err)
 	}
 	jsfunc := fmt.Sprintf(`
 	chart.options.hover.mode = 'index';
-    chart.options.tooltips.callbacks.title = function(tts, data) {
+	chart.options.tooltips.callbacks.title = function(tts, data) {
         var names = %s
+        var has_backgrounds = %v
         var out = []
         tts.forEach(function(ti) {
-            out.push(names[ti.index])
+            if(has_backgrounds == (ti.datasetIndex == 1)) {
+                out.push(names[ti.index])
+            } else {
+                out.push("background")
+            }
         })
         return out.join(",")
-    }`, sjson)
+    }`, sjson, backgroundN > 0)
 
 	return charts, jsfunc
 }
@@ -268,13 +327,22 @@ func plotROCs(rocs [][]float32, samples []string, chrom string) (chartjs.Chart, 
 		return chart, err
 	}
 
+	datasets := make([]chartjs.Dataset, 0, len(rocs))
+
 	for i, roc := range rocs {
 		xys := asValues(roc, 1/float64(slots)*1/slotsMid)
-		c := randomColor(i)
-		dataset := chartjs.Dataset{Data: xys, Label: samples[i], Fill: chartjs.False, PointRadius: 0.0, BorderWidth: 2, BorderColor: c, PointBackgroundColor: c, BackgroundColor: c, PointHitRadius: 8, PointHoverRadius: 3}
+		c := randomColor(i, true)
+		label := samples[i]
+		if i < backgroundN {
+			label = "background"
+		}
+		dataset := chartjs.Dataset{Data: xys, Label: label, Fill: chartjs.False, PointRadius: 0.0, BorderWidth: 2, BorderColor: c, PointBackgroundColor: c, BackgroundColor: c, PointHitRadius: 8, PointHoverRadius: 3}
 		dataset.XAxisID = xa
 		dataset.YAxisID = ya
-		chart.AddDataset(dataset)
+		datasets = append(datasets, dataset)
+	}
+	for i := len(datasets) - 1; i >= 0; i-- {
+		chart.AddDataset(datasets[i])
 	}
 	chart.Options.Responsive = chartjs.False
 	chart.Options.Tooltip = &chartjs.Tooltip{Mode: "nearest"}
@@ -299,11 +367,13 @@ func plotMapped(mapped []uint64, unmapped []uint64, samples []string) (*chartjs.
 		return nil, "", err
 	}
 
-	vals := &vs{xs: make([]float64, len(mapped)),
-		ys: make([]float64, len(mapped))}
+	vals := &vs{xs: make([]float64, 0, len(mapped)),
+		ys: make([]float64, 0, len(mapped))}
 	for i, m := range mapped {
-		vals.xs[i] = math.Log1p(float64(m))
-		vals.ys[i] = math.Log1p(float64(unmapped[i]))
+		if i >= backgroundN {
+			vals.xs = append(vals.xs, math.Log1p(float64(m)))
+			vals.ys = append(vals.ys, math.Log1p(float64(unmapped[i])))
+		}
 	}
 	c := &types.RGBA{R: 110, G: 250, B: 59, A: 240}
 
@@ -316,7 +386,7 @@ func plotMapped(mapped []uint64, unmapped []uint64, samples []string) (*chartjs.
 	dataset.YAxisID = ya
 	chart.AddDataset(dataset)
 
-	sjson, err := json.Marshal(samples)
+	sjson, err := json.Marshal(samples[backgroundN:])
 	if err != nil {
 		panic(err)
 	}
@@ -367,11 +437,14 @@ func plotSex(sexes map[string][]float64, chroms []string, samples []string) (*ch
 			if inf != cn {
 				continue
 			}
+			if i < backgroundN {
+				continue
+			}
 			jssamples[len(jssamples)-1] = append(jssamples[len(jssamples)-1], samples[i])
 			vals.xs = append(vals.xs, sexes[chroms[0]][i])
 			vals.ys = append(vals.ys, sexes[chroms[1]][i])
 		}
-		c := randomColor(cn)
+		c := randomColor(cn, false)
 		dataset := chartjs.Dataset{Data: vals, Label: fmt.Sprintf("Inferred CN for %s: %d", chroms[0], cn), Fill: chartjs.False, PointRadius: 6, BorderWidth: 0,
 			BorderColor: &types.RGBA{R: 90, G: 90, B: 90, A: 150}, PointBackgroundColor: c, BackgroundColor: c, ShowLine: chartjs.False, PointHitRadius: 6}
 		dataset.XAxisID = xa

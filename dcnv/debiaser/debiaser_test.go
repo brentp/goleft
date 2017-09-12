@@ -6,25 +6,26 @@ import (
 	"reflect"
 	"testing"
 
+	"gonum.org/v1/gonum/mat"
+
 	"github.com/brentp/goleft/dcnv/debiaser"
 	"github.com/brentp/goleft/dcnv/scalers"
-	"github.com/gonum/matrix/mat64"
 )
 
-func fillMatrix(mat *mat64.Dense) {
-	r, c := mat.Dims()
+func fillMatrix(mat *mat.Dense) {
+	r, c := imat.Dims()
 	for i := 0; i < r; i++ {
 		for j := 0; j < c; j++ {
-			mat.Set(i, j, 100+float64(i)*100+10*float64(j)+float64(j)/10+10*rand.Float64())
+			imat.Set(i, j, 100+float64(i)*100+10*float64(j)+float64(j)/10+10*rand.Float64())
 		}
 	}
 }
 
-func printMatrix(mat *mat64.Dense) {
-	r, c := mat.Dims()
+func printMatrix(imat *mat.Dense) {
+	r, c := imat.Dims()
 	for i := 0; i < r; i++ {
 		fmt.Printf("[")
-		row := mat.RawRowView(i)
+		row := imat.RawRowView(i)
 		for j := 0; j < c; j++ {
 			if j < c-1 {
 				fmt.Printf("%.2f, ", row[j])
@@ -40,12 +41,12 @@ func TestGeneralDebiasSort(t *testing.T) {
 
 	g := debiaser.GeneralDebiaser{Vals: []float64{0, 1, 2, 3, 10, 9, 8, 6}}
 
-	mat := mat64.NewDense(len(g.Vals), 4, nil)
-	cpy := mat64.NewDense(len(g.Vals), 4, nil)
-	fillMatrix(mat)
-	cpy.Copy(mat)
+	imat := mat.NewDense(len(g.Vals), 4, nil)
+	cpy := mat.NewDense(len(g.Vals), 4, nil)
+	fillMatrix(imat)
+	cpy.Copy(imat)
 
-	g.Sort(mat)
+	g.Sort(imat)
 	/*
 		for i := 0; i < r; i++ {
 			fmt.Printf("%v\n", mat.RawRowView(i))
@@ -64,7 +65,7 @@ func TestGeneralDebiasSort(t *testing.T) {
 		t.Fatalf("expected different matrix after sort")
 	}
 
-	g.Unsort(mat)
+	g.Unsort(imat)
 	/*
 		if !reflect.DeepEqual(g.Posns, []uint32{0, 1, 2, 3, 4, 5, 6, 7}) {
 			t.Fatalf("got %s", g.Posns)
@@ -79,7 +80,7 @@ func TestGeneralDebiasSort(t *testing.T) {
 			fmt.Printf("%v -- %v\n", mat.RawRowView(i), cpy.RawRowView(i))
 		}
 	*/
-	if !reflect.DeepEqual(cpy, mat) {
+	if !reflect.DeepEqual(cpy, imat) {
 		t.Fatalf("expected indentical matrix after unsort")
 	}
 
@@ -90,18 +91,18 @@ func TestGeneralDebias(t *testing.T) {
 		Window: 1,
 		//Posns:  []uint32{0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14},
 	}
-	mat := mat64.NewDense(len(g.Vals), 7, nil)
-	fillMatrix(mat)
+	imat := mat.NewDense(len(g.Vals), 7, nil)
+	fillMatrix(imat)
 	var zscore scalers.ZScore
-	zscore.Scale(mat)
-	zscore.UnScale(mat)
+	zscore.Scale(imat)
+	zscore.UnScale(imat)
 	// check z-scaling
 	//fmt.Println("after")
 	//printMatrix(mat)
-	zscore.Scale(mat)
-	g.Sort(mat)
-	g.Debias(mat)
-	zscore.UnScale(mat)
+	zscore.Scale(imat)
+	g.Sort(imat)
+	g.Debias(imat)
+	zscore.UnScale(imat)
 	//fmt.Println("after")
 	//printMatrix(mat)
 	/*
@@ -110,7 +111,7 @@ func TestGeneralDebias(t *testing.T) {
 		}
 	*/
 
-	g.Unsort(mat)
+	g.Unsort(imat)
 	/*
 		if !reflect.DeepEqual(g.Posns, []uint32{0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14}) {
 			t.Fatal("expected sorted posns")
