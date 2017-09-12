@@ -1,3 +1,7 @@
+v0.1.18 (dev)
+=======
++ `indexsplit`: fix off-by-one that resulted in double-counting some regions.
++ `indexcov`: cram edge-cases.
 v0.1.17
 =======
 + `indexcov`: dont error when no sex chromosomes are found (#27).

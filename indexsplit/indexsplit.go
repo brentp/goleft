@@ -11,13 +11,14 @@ import (
 	"fmt"
 	"strings"
 
+	"gonum.org/v1/gonum/floats"
+	"gonum.org/v1/gonum/stat"
+
 	arg "github.com/alexflint/go-arg"
 	"github.com/biogo/hts/sam"
 	"github.com/biogo/store/interval"
 	"github.com/brentp/goleft/depth"
 	"github.com/brentp/goleft/indexcov"
-	"github.com/gonum/floats"
-	"github.com/gonum/stat"
 )
 
 type cliargs struct {
@@ -163,7 +164,7 @@ func Split(paths []string, refs []*sam.Reference, N int, probs map[string]*inter
 					start := i * indexcov.TileWidth
 					l := int(float64(indexcov.TileWidth)/float64(nsplits) + 1)
 					for k := 0; k < nsplits; k++ {
-						if i+k == len(size) {
+						if i+k == len(size)+1 {
 							ch <- Chunk{Chrom: ref.Name(), Start: start, End: ref.Len(), Sum: sum / float64(nsplits), Splits: nsplits}
 						} else {
 							ch <- Chunk{Chrom: ref.Name(), Start: start, End: imin(start+l, (i+1)*indexcov.TileWidth), Sum: sum / float64(nsplits), Splits: nsplits}
