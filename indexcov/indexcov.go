@@ -110,6 +110,9 @@ func (x *Index) NormalizedDepth(refID int) []float32 {
 	if x.medianSizePerTile == 0.0 {
 		x.init()
 	}
+	if refID >= len(x.sizes) {
+		return make([]float32, 0)
+	}
 	ref := x.sizes[refID]
 
 	depths := make([]float32, 0, len(ref))
