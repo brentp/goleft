@@ -11,13 +11,14 @@ import (
 	"fmt"
 	"strings"
 
+	"gonum.org/v1/gonum/floats"
+	"gonum.org/v1/gonum/stat"
+
 	arg "github.com/alexflint/go-arg"
 	"github.com/biogo/hts/sam"
 	"github.com/biogo/store/interval"
 	"github.com/brentp/goleft/depth"
 	"github.com/brentp/goleft/indexcov"
-	"github.com/gonum/floats"
-	"github.com/gonum/stat"
 )
 
 type cliargs struct {

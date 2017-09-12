@@ -3,23 +3,24 @@ package debiaser
 import (
 	"fmt"
 	"log"
+	"math"
 	"sort"
 
+	"gonum.org/v1/gonum/floats"
+	"gonum.org/v1/gonum/mat"
+
 	"github.com/JaderDias/movingmedian"
-	"github.com/gonum/floats"
-	"github.com/gonum/matrix"
-	"github.com/gonum/matrix/mat64"
 )
 
 // Debiaser implements inplace removal of bias from a mat64 of (scaled) values.
 type Debiaser interface {
-	Debias(*mat64.Dense)
+	Debias(*mat.Dense)
 }
 
 // Sorter provides method to sort and then unsort a mat64
 type Sorter interface {
-	Sort(*mat64.Dense)
-	Unsort(*mat64.Dense)
+	Sort(*mat.Dense)
+	Unsort(*mat.Dense)
 }
 
 // SortedDebiaser is useful when we need to: sort, then unbias based on that sort order, then unsort.
@@ -37,22 +38,22 @@ type GeneralDebiaser struct {
 	Vals   []float64
 	Window int
 	inds   []int
-	tmp    *mat64.Dense
+	tmp    *mat.Dense
 }
 
 func (g *GeneralDebiaser) setTmp(r, c int) {
 	if g.tmp == nil {
-		g.tmp = mat64.NewDense(r, c, nil)
+		g.tmp = mat.NewDense(r, c, nil)
 	} else {
 		gr, gc := g.tmp.Dims()
 		if gr != r || gc != c {
-			g.tmp = mat64.NewDense(r, c, nil)
+			g.tmp = mat.NewDense(r, c, nil)
 		}
 	}
 }
 
 // Sort sorts the rows in mat according the order in g.Vals.
-func (g *GeneralDebiaser) Sort(mat *mat64.Dense) {
+func (g *GeneralDebiaser) Sort(mat *mat.Dense) {
 	if g.inds == nil {
 		g.inds = make([]int, len(g.Vals))
 	}
@@ -75,7 +76,7 @@ func (g *GeneralDebiaser) Sort(mat *mat64.Dense) {
 }
 
 // Unsort reverts the values to be position sorted.
-func (g *GeneralDebiaser) Unsort(mat *mat64.Dense) {
+func (g *GeneralDebiaser) Unsort(mat *mat.Dense) {
 	if g.inds == nil {
 		panic("unsort: must call sort first")
 	}
@@ -94,42 +95,30 @@ func (g *GeneralDebiaser) Unsort(mat *mat64.Dense) {
 // Debias by subtracting moving median in each sample.
 // It's assumed that g.Sort() has been called before this and that g.Unsort() will be called after.
 // It's also assumed that the values in mat have been scaled, for example by a `scaler.ZScore`.
-func (g *GeneralDebiaser) Debias(mat *mat64.Dense) {
-	r, c := mat.Dims()
+func (g *GeneralDebiaser) Debias(imat *mat.Dense) {
+	r, c := imat.Dims()
 	col := make([]float64, r)
-	ins := make([]float64, 0, 2000)
-	outs := make([]float64, 0, 2000)
 	for sampleI := 0; sampleI < c; sampleI++ {
-		mat64.Col(col, sampleI, mat)
+		mat.Col(col, sampleI, imat)
 
 		mm := movingmedian.NewMovingMedian(g.Window)
 		mid := (g.Window-1)/2 + 1
 		for i := 0; i < mid; i++ {
 			mm.Push(col[i])
-			if sampleI == 0 {
-				ins = append(ins, col[i])
-			}
 		}
 		for i := 0; i < mid; i++ {
-			col[i] -= mm.Median()
-			if sampleI == 0 {
-				outs = append(outs, col[i])
-			}
+			col[i] /= math.Max(mm.Median(), 1)
 		}
 
 		var i int
 		for i = mid; i < len(col)-mid; i++ {
 			mm.Push(col[i+mid])
-			col[i] -= mm.Median()
-			if sampleI == 0 {
-				outs = append(outs, col[i])
-				ins = append(ins, col[i])
-			}
+			col[i] /= math.Max(mm.Median(), 1)
 		}
 		for ; i < len(col); i++ {
-			col[i] -= mm.Median()
+			col[i] /= math.Max(mm.Median(), 1)
 		}
-		mat.SetCol(sampleI, col)
+		imat.SetCol(sampleI, col)
 	}
 }
 
@@ -141,11 +130,11 @@ type ChunkDebiaser struct {
 	ScoreWindow float64
 }
 
-func (cd *ChunkDebiaser) Debias(mat *mat64.Dense) {
+func (cd *ChunkDebiaser) Debias(imat *mat.Dense) {
 	if cd.ScoreWindow == 0 {
 		panic("must set ChunkDebiaser.ScoreWindow")
 	}
-	r, c := mat.Dims()
+	r, c := imat.Dims()
 	col := make([]float64, r)
 
 	slices := make([]int, 1, 100)
@@ -160,19 +149,24 @@ func (cd *ChunkDebiaser) Debias(mat *mat64.Dense) {
 	dpSubset := make([]float64, 0, len(cd.Vals))
 
 	for sampleI := 0; sampleI < c; sampleI++ {
-		mat64.Col(col, sampleI, mat)
+		mat.Col(col, sampleI, imat)
 		for i := 1; i < len(slices); i++ {
 			si, ei := slices[i-1], slices[i]
 			dpSubset = dpSubset[:(ei - si)]
 			copy(dpSubset, col[si:ei])
 			sort.Float64s(dpSubset)
-			median := dpSubset[(ei-si)/2]
+			var k int
+			for ; k < len(dpSubset) && dpSubset[k] == 0; k++ {
+			}
+			median := dpSubset[(ei-si-k)/2]
 
-			for j := si; j < ei; j++ {
-				col[j] /= median
+			if median > 0 {
+				for j := si; j < ei; j++ {
+					col[j] /= median
+				}
 			}
 		}
-		mat.SetCol(sampleI, col)
+		imat.SetCol(sampleI, col)
 	}
 }
 
@@ -180,9 +174,9 @@ type SVD struct {
 	MinVariancePct float64
 }
 
-func (isvd *SVD) Debias(mat *mat64.Dense) {
-	var svd mat64.SVD
-	if ok := svd.Factorize(mat, matrix.SVDThin); !ok {
+func (isvd *SVD) Debias(imat *mat.Dense) {
+	var svd mat.SVD
+	if ok := svd.Factorize(imat, mat.SVDThin); !ok {
 		panic("error with SVD")
 	}
 
@@ -197,18 +191,17 @@ func (isvd *SVD) Debias(mat *mat64.Dense) {
 	}
 	log.Println(str)
 
-	sigma := mat64.NewDense(len(s), len(s), nil)
+	sigma := mat.NewDense(len(s), len(s), nil)
 	// leave the first n as 0 and set the rest.
 	for i := n; i < len(s); i++ {
 		sigma.Set(i, i, s[i])
 	}
-	mat.Product(u, sigma, v.T())
+	imat.Product(u, sigma, v.T())
 }
 
-func extractSVD(svd *mat64.SVD) (s []float64, u, v *mat64.Dense) {
-	var um, vm mat64.Dense
-	um.UFromSVD(svd)
-	vm.VFromSVD(svd)
+func extractSVD(svd *mat.SVD) (s []float64, u, v *mat.Dense) {
+	um := svd.UTo(nil)
+	vm := svd.VTo(nil)
 	s = svd.Values(nil)
-	return s, &um, &vm
+	return s, um, vm
 }

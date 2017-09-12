@@ -17,6 +17,10 @@ import (
 	"sync"
 	"time"
 
+	"gonum.org/v1/gonum/floats"
+	"gonum.org/v1/gonum/mat"
+	"gonum.org/v1/gonum/stat"
+
 	arg "github.com/alexflint/go-arg"
 	"github.com/biogo/biogo/io/seqio/fai"
 	"github.com/biogo/hts/bam"
@@ -26,9 +30,6 @@ import (
 	"github.com/brentp/go-chartjs/types"
 	"github.com/brentp/goleft"
 	"github.com/brentp/goleft/indexcov/crai"
-	"github.com/gonum/floats"
-	"github.com/gonum/matrix/mat64"
-	"github.com/gonum/stat"
 )
 
 // Ploidy indicates the expected ploidy of the samples.
@@ -630,22 +631,22 @@ func checkSexes(obs map[string][]float64, exp []string) {
 	}
 }
 
-func pca(pca8 [][]uint8, samples []string) (*mat64.Dense, []chartjs.Chart, string) {
-	mat := mat64.NewDense(len(pca8), len(pca8[0]), nil)
+func pca(pca8 [][]uint8, samples []string) (*mat.Dense, []chartjs.Chart, string) {
+	imat := mat.NewDense(len(pca8), len(pca8[0]), nil)
 	row := make([]float64, len(pca8[0]))
 	for i := 0; i < len(pca8); i++ {
 		for j, v := range pca8[i] {
 			row[j] = float64(v)
 		}
-		mat.SetRow(i, row)
+		imat.SetRow(i, row)
 	}
 	var pc stat.PC
-	if ok := pc.PrincipalComponents(mat, nil); !ok {
+	if ok := pc.PrincipalComponents(imat, nil); !ok {
 		panic("indexcov: error with principal components")
 	}
 
 	k := 5
-	vars := pc.Vars(nil)
+	vars := pc.VarsTo(nil)
 	floats.Scale(1/floats.Sum(vars), vars)
 	if len(vars) < k {
 		k = len(vars)
@@ -657,8 +658,8 @@ func pca(pca8 [][]uint8, samples []string) (*mat64.Dense, []chartjs.Chart, strin
 	}
 	vars = vars[:k]
 
-	var proj mat64.Dense
-	proj.Mul(mat, pc.Vectors(nil).Slice(0, len(pca8[0]), 0, k))
+	var proj mat.Dense
+	proj.Mul(imat, pc.VectorsTo(nil).Slice(0, len(pca8[0]), 0, k))
 	pcaPlots, customjs := plotPCA(&proj, samples, vars)
 
 	return &proj, pcaPlots, customjs

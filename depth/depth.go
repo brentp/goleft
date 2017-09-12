@@ -32,7 +32,7 @@ type dargs struct {
 	Chrom        string    `arg:"-c,help:optional chromosome to limit analysis"`
 	MinCov       int       `arg:"help:minimum depth considered callable"`
 	Stats        bool      `arg:"-s,help:report sequence stats [GC CpG masked] for each window"`
-	Reference    string    `arg:"-r,required,help:path to reference fasta"`
+	Reference    string    `arg:"-r,help:path to reference fasta"`
 	Processes    int       `arg:"-p,help:number of processors to parallelize."`
 	Bed          string    `arg:"-b,help:optional file of positions or regions to restrict depth calculations."`
 	Prefix       string    `arg:"required,help:prefix for output files depth.bed and callable.bed"`

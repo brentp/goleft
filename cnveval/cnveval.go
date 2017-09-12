@@ -380,6 +380,7 @@ func poverlap(a CNV, b Truth) float64 {
 		return 0
 	}
 	total := math.Min(float64(a.End-a.Start), float64(b.End-b.Start))
+	//total := float64(b.End - b.Start)
 	ovl := imin(a.End, b.End) - imax(a.Start, b.Start)
 	if ovl < 0 {
 		return 0

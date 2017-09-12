@@ -5,8 +5,8 @@ import (
 	"math"
 	"sort"
 
-	"github.com/gonum/matrix/mat64"
-	"github.com/gonum/stat"
+	"gonum.org/v1/gonum/mat"
+	"gonum.org/v1/gonum/stat"
 )
 
 // Scaler allows transformation and back of the depths.
@@ -14,8 +14,8 @@ import (
 // will be 0-centered
 type Scaler interface {
 	// Scale Converts from AdjustedDepth to a scaled value
-	Scale(*mat64.Dense)
-	UnScale(*mat64.Dense)
+	Scale(*mat.Dense)
+	UnScale(*mat.Dense)
 }
 
 var _ Scaler = &ZScore{}
@@ -28,7 +28,7 @@ type ZScore struct {
 }
 
 // UnScale converts back to depths.
-func (z *ZScore) UnScale(a *mat64.Dense) {
+func (z *ZScore) UnScale(a *mat.Dense) {
 	r, _ := a.Dims()
 	for i := 0; i < r; i++ {
 		row := a.RawRowView(i)
@@ -39,7 +39,7 @@ func (z *ZScore) UnScale(a *mat64.Dense) {
 }
 
 // Scale converts from depths to z-scores.
-func (z *ZScore) Scale(a *mat64.Dense) {
+func (z *ZScore) Scale(a *mat.Dense) {
 	r, _ := a.Dims()
 	z.means = make([]float64, r)
 	z.sds = make([]float64, r)
@@ -65,7 +65,7 @@ type ColCentered struct {
 	centers  []float64
 }
 
-func (rc *RowCentered) Scale(a *mat64.Dense) {
+func (rc *RowCentered) Scale(a *mat.Dense) {
 	r, _ := a.Dims()
 	if rc.centers == nil {
 		rc.centers = make([]float64, 0, r)
@@ -81,7 +81,7 @@ func (rc *RowCentered) Scale(a *mat64.Dense) {
 
 }
 
-func (cc *ColCentered) Scale(a *mat64.Dense) {
+func (cc *ColCentered) Scale(a *mat.Dense) {
 	r, c := a.Dims()
 	if cc.centers == nil {
 		cc.centers = make([]float64, 0, c)
@@ -89,7 +89,7 @@ func (cc *ColCentered) Scale(a *mat64.Dense) {
 	cc.centers = cc.centers[:0]
 	col := make([]float64, r)
 	for i := 0; i < c; i++ {
-		mat64.Col(col, i, a)
+		mat.Col(col, i, a)
 		cc.centers = append(cc.centers, cc.Centerer(col))
 		for c := range col {
 			col[c] -= cc.centers[i]
@@ -99,7 +99,7 @@ func (cc *ColCentered) Scale(a *mat64.Dense) {
 
 }
 
-func (rc *RowCentered) UnScale(a *mat64.Dense) {
+func (rc *RowCentered) UnScale(a *mat.Dense) {
 	r, _ := a.Dims()
 	for i := 0; i < r; i++ {
 		row := a.RawRowView(i)
@@ -110,11 +110,11 @@ func (rc *RowCentered) UnScale(a *mat64.Dense) {
 	}
 }
 
-func (cc *ColCentered) UnScale(a *mat64.Dense) {
+func (cc *ColCentered) UnScale(a *mat.Dense) {
 	r, c := a.Dims()
 	col := make([]float64, r)
 	for i := 0; i < c; i++ {
-		mat64.Col(col, i, a)
+		mat.Col(col, i, a)
 		cnt := cc.centers[i]
 		for j := range col {
 			col[j] += cnt
@@ -137,7 +137,7 @@ type Log2 struct {
 }
 
 // Scale converts from depths to log2s
-func (l *Log2) Scale(a *mat64.Dense) {
+func (l *Log2) Scale(a *mat.Dense) {
 	r, _ := a.Dims()
 	if l.CC == nil {
 		l.CC = &ColCentered{Centerer: gmean}
@@ -152,7 +152,7 @@ func (l *Log2) Scale(a *mat64.Dense) {
 }
 
 // UnScale converts from log2s to depths
-func (l *Log2) UnScale(a *mat64.Dense) {
+func (l *Log2) UnScale(a *mat.Dense) {
 	r, _ := a.Dims()
 	l.CC.UnScale(a)
 	for i := 0; i < r; i++ {

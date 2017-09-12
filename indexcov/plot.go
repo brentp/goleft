@@ -12,12 +12,13 @@ import (
 	"strconv"
 	"strings"
 
+	"gonum.org/v1/gonum/mat"
+	"gonum.org/v1/plot"
+	"gonum.org/v1/plot/plotter"
+	"gonum.org/v1/plot/vg"
+
 	chartjs "github.com/brentp/go-chartjs"
 	"github.com/brentp/go-chartjs/types"
-	"github.com/gonum/matrix/mat64"
-	"github.com/gonum/plot"
-	"github.com/gonum/plot/plotter"
-	"github.com/gonum/plot/vg"
 )
 
 type vs struct {
@@ -244,7 +245,7 @@ func plotBinsSet(chart *chartjs.Chart, xys *vs, c *types.RGBA, xa string, ya str
 	chart.AddDataset(dataset)
 }
 
-func plotPCA(mat *mat64.Dense, samples []string, vars []float64) ([]chartjs.Chart, string) {
+func plotPCA(imat *mat.Dense, samples []string, vars []float64) ([]chartjs.Chart, string) {
 
 	var charts []chartjs.Chart
 	c := &types.RGBA{R: 110, G: 250, B: 59, A: 240}
@@ -268,7 +269,7 @@ func plotPCA(mat *mat64.Dense, samples []string, vars []float64) ([]chartjs.Char
 		}
 		if backgroundN > 0 {
 			c := &types.RGBA{R: 180, G: 180, B: 180, A: 240}
-			xys := &vs{xs: mat64.Col(nil, 0, mat)[:backgroundN], ys: mat64.Col(nil, pc-1, mat)[:backgroundN]}
+			xys := &vs{xs: mat.Col(nil, 0, imat)[:backgroundN], ys: mat.Col(nil, pc-1, imat)[:backgroundN]}
 			dataset := chartjs.Dataset{Data: xys, Label: "samples", Fill: chartjs.False, PointHoverRadius: 6,
 				PointRadius: 4,
 				BorderWidth: 0, BorderColor: &types.RGBA{R: 150, G: 150, B: 150, A: 150}, PointBackgroundColor: c, BackgroundColor: c, ShowLine: chartjs.False, PointHitRadius: 6}
@@ -276,7 +277,7 @@ func plotPCA(mat *mat64.Dense, samples []string, vars []float64) ([]chartjs.Char
 			dataset.YAxisID = ya
 			c1.AddDataset(dataset)
 		}
-		xys := &vs{xs: mat64.Col(nil, 0, mat)[backgroundN:], ys: mat64.Col(nil, pc-1, mat)[backgroundN:]}
+		xys := &vs{xs: mat.Col(nil, 0, imat)[backgroundN:], ys: mat.Col(nil, pc-1, imat)[backgroundN:]}
 		dataset := chartjs.Dataset{Data: xys, Label: "samples", Fill: chartjs.False, PointHoverRadius: 6,
 			PointRadius: 4,
 			BorderWidth: 0, BorderColor: &types.RGBA{R: 150, G: 150, B: 150, A: 150}, PointBackgroundColor: c, BackgroundColor: c, ShowLine: chartjs.False, PointHitRadius: 6}
