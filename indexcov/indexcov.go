@@ -93,15 +93,18 @@ func (x *Index) init() {
 
 	// we get the median as it's more stable than mean.
 	sort.Slice(sizes, func(i, j int) bool { return sizes[i] < sizes[j] })
-	x.medianSizePerTile = float64(sizes[len(sizes)/2])
-	// if we have a single chunk of a chrom, then we get a lot of zeros so we address that here.
-	if x.medianSizePerTile == 0 {
-		i := len(sizes) / 2
-		for ; i < len(sizes) && sizes[i] == 0; i++ {
-		}
-		sizes = sizes[i:]
-		x.medianSizePerTile = float64(sizes[len(sizes)/2])
+	total := int(0)
+	cumsum := make([]int, len(sizes))
+	for i, s := range sizes {
+		total += int(s)
+		cumsum[i] = total
 	}
+	var idx = sort.SearchInts(cumsum, int(float64(total)/2))
+	if idx == len(cumsum) {
+		idx--
+	}
+
+	x.medianSizePerTile = float64(sizes[idx])
 }
 
 // NormalizedDepth returns a list of numbers for the normalized depth of the given region.
@@ -117,6 +120,7 @@ func (x *Index) NormalizedDepth(refID int) []float32 {
 	ref := x.sizes[refID]
 
 	depths := make([]float32, 0, len(ref))
+
 	for i, o := range ref {
 		depths = append(depths, float32(float64(o)/x.medianSizePerTile))
 		if depths[i] > 50000 {

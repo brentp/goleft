@@ -2,6 +2,10 @@ v0.1.18 (dev)
 =======
 + `indexsplit`: fix off-by-one that resulted in double-counting some regions.
 + `indexcov`: cram edge-cases.
++ `indexcov`: better normalization to 1 for all cases. Fixes bug for bams with
+              many (e.g. > 10K) chromosomes of which many have very low or normalization
+              coverage. (#36)
+
 v0.1.17
 =======
 + `indexcov`: dont error when no sex chromosomes are found (#27).
