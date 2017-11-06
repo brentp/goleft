@@ -91,16 +91,23 @@ func (x *Index) init() {
 		log.Fatalf("indexcov: no usable chromsomes in bam: %s", x.path)
 	}
 
-	// we get the median as it's more stable than mean.
 	sort.Slice(sizes, func(i, j int) bool { return sizes[i] < sizes[j] })
-	total := int(0)
-	cumsum := make([]int, len(sizes))
+	total := int64(0)
+	cumsum := make([]int64, len(sizes))
+
+	// some bins with very high coverage can screw the normalization.
+	// so we cap at the 98th percentile and then take the bin that passed then
+	// median.
+	n98 := sizes[int(0.98*float64(len(sizes)))]
 	for i, s := range sizes {
-		total += int(s)
+		if s > n98 {
+			s = n98
+		}
+		total += s
 		cumsum[i] = total
 	}
-	var idx = sort.SearchInts(cumsum, int(float64(total)/2))
-	if idx == len(cumsum) {
+	var idx = sort.Search(len(cumsum), func(i int) bool { return (cumsum[i]) > (total / 2) })
+	for idx >= len(sizes) {
 		idx--
 	}
 
