@@ -29,6 +29,8 @@ func pcheck(e error) {
 	}
 }
 
+const N_MADS = 10
+
 func readCoverage(path string) int {
 	fh, err := xopen.Ropen(path)
 	pcheck(err)
@@ -50,7 +52,30 @@ func readCoverage(path string) int {
 	return cov
 }
 
+func madFilter(arr []int, nmads int) []int {
+	if !sort.IntsAreSorted(arr) {
+		sort.Ints(arr)
+	}
+	med := arr[len(arr)/2]
+	upper_mads := make([]int, 0, len(arr))
+	for _, a := range arr[len(arr)/2+1:] {
+		upper_mads = append(upper_mads, a-med)
+	}
+	sort.Ints(upper_mads)
+	umad := upper_mads[len(upper_mads)/2]
+	upper := med + nmads*umad
+	var i, a int
+	for i, a = range arr {
+		if a > upper {
+			break
+		}
+	}
+	return arr[:i]
+}
+
 func meanStd(arr []int) (mean, std float64) {
+	// first remove things that are more than 10 mads above the median.
+
 	l := float64(len(arr))
 	for _, a := range arr {
 		mean += float64(a) / l
@@ -80,6 +105,8 @@ type Stats struct {
 	ProportionDuplicate      float64
 
 	MaxReadLength int
+
+	H []float64
 }
 
 func (s Stats) String() string {
@@ -156,13 +183,35 @@ func BamStats(br *bam.Reader, n int) Stats {
 	}
 
 	if len(insertSizes) > 0 {
-		s.InsertMean, s.InsertSD = meanStd(insertSizes)
-		s.TemplateMean, s.TemplateSD = meanStd(templateLengths)
+
 		sort.Ints(insertSizes)
 		l := float64(len(insertSizes) - 1)
 		s.InsertPct5 = insertSizes[int(0.05*l+0.5)]
 		s.InsertPct95 = insertSizes[int(0.95*l+0.5)]
 
+		insertSizes = madFilter(insertSizes, N_MADS)
+		s.InsertMean, s.InsertSD = meanStd(insertSizes)
+
+		templateLengths = madFilter(templateLengths, N_MADS)
+		s.TemplateMean, s.TemplateSD = meanStd(templateLengths)
+
+		// taken from lumpy/scripts/pairend_distro.py
+		start := float64(s.MaxReadLength)
+		stop := float64(s.TemplateMean + s.TemplateSD*4)
+		s.H = make([]float64, int(stop-start+1))
+		cnt := float64(0)
+		for _, t := range templateLengths {
+			x := float64(t)
+			if x < start || x > stop {
+				continue
+			}
+			j := int(x - start)
+			s.H[j] += 1
+			cnt += 1
+		}
+		for i := range s.H {
+			s.H[i] /= cnt
+		}
 	}
 	return s
 }
