@@ -3,7 +3,6 @@ package depth
 import (
 	"bufio"
 	"io"
-	"log"
 
 	"github.com/biogo/store/interval"
 	"github.com/brentp/xopen"
@@ -40,35 +39,36 @@ func Overlaps(tree *interval.IntTree, start, end int) bool {
 }
 
 // ReadTree takes a bed file and returns map of trees.
-func ReadTree(p string) map[string]*interval.IntTree {
-	if p == "" {
-		return nil
-	}
-	r, err := xopen.Ropen(p)
-	if err != nil {
-		panic(err)
-	}
+func ReadTree(ps ...string) map[string]*interval.IntTree {
 	tree := make(map[string]*interval.IntTree, 10)
-	br := bufio.NewReader(r)
 	k := 0
-
-	for {
-		line, err := br.ReadBytes('\n')
-		if err == io.EOF {
-			break
+	for _, p := range ps {
+		if p == "" {
+			continue
 		}
+		r, err := xopen.Ropen(p)
 		if err != nil {
 			panic(err)
 		}
+		defer r.Close()
+		br := bufio.NewReader(r)
 
-		chrom, start, end := chromStartEndFromLine(line)
-		if _, ok := tree[chrom]; !ok {
-			tree[chrom] = &interval.IntTree{}
+		for {
+			line, err := br.ReadBytes('\n')
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				panic(err)
+			}
+
+			chrom, start, end := chromStartEndFromLine(line)
+			if _, ok := tree[chrom]; !ok {
+				tree[chrom] = &interval.IntTree{}
+			}
+			tree[chrom].Insert(irange{start, end, uintptr(k)}, false)
+			k += 1
 		}
-		tree[chrom].Insert(irange{start, end, uintptr(k)}, false)
-		k++
-
 	}
-	log.Printf("read %d intervals into interval tree", k)
 	return tree
 }
