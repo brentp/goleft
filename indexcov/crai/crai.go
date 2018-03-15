@@ -79,7 +79,7 @@ func makeSizes(slices []Slice) []int64 {
 		}
 		overhang := (sl.Start() - lastStart)
 		if overhang < -TileWidth || overhang > TileWidth {
-			log.Println(overhang, TileWidth)
+			log.Println(overhang, TileWidth, sl, sl.Start(), lastStart)
 			panic("logic error")
 		}
 		// 100000 is an arbitrary scalar to make sure we have enough resolution.

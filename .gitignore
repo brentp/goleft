@@ -1,4 +1,5 @@
 *.png
+_test.cov
 *.bed
 *_linux64
 *_osx
