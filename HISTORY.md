@@ -1,4 +1,4 @@
-v0.1.18 (dev)
+v0.1.18
 =======
 + `indexsplit`: fix off-by-one that resulted in double-counting some regions.
 + `indexcov`: cram edge-cases.
