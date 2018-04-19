@@ -16,7 +16,7 @@ by splitting in to `N` regions with approximately equal amounts of data **across
 On a modest laptop with an SSD, `indexsplit` can **generate even-coverage regions in ~4 seconds for 45 bams**.
 The time is independent of the number of regions.
 
-When a single 16KB chunk will has more data than the determined chunk size, `indexpslit` will output
+When a single 16KB chunk will has more data than the determined chunk size, `indexsplit` will output
 sub-regions of that chunk even though it doesn't know the exact placement of the data within it.
 
 Usage
@@ -33,5 +33,5 @@ the `--fai`:
 goleft indexsplit -N 8000 --fai reference.fa.fai /path/to/*.crai > regions.bed
 ```
 
-The user is responsible for unsuring that the crai chromosome order matches the .fai order 
+The user is responsible for insuring that the crai chromosome order matches the .fai order 
 (this will be the case if the fasta was the same as used in alignment).
