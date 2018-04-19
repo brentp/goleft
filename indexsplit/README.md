@@ -33,5 +33,5 @@ the `--fai`:
 goleft indexsplit -N 8000 --fai reference.fa.fai /path/to/*.crai > regions.bed
 ```
 
-The user is responsible for insuring that the crai chromosome order matches the .fai order 
+The user is responsible for ensuring that the crai chromosome order matches the .fai order 
 (this will be the case if the fasta was the same as used in alignment).
