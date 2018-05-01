@@ -68,7 +68,7 @@ func makeSizes(slices []Slice) []int64 {
 
 	for _, sl := range slices {
 		// back fill gaps
-		for k := 0; lastStart <= sl.Start()-TileWidth; lastStart += TileWidth {
+		for k := 0; lastStart < sl.Start()-TileWidth; lastStart += TileWidth {
 			if k == 0 {
 				sizes = append(sizes, lastVal)
 				lastVal = 0
@@ -78,9 +78,22 @@ func makeSizes(slices []Slice) []int64 {
 			k++
 		}
 		overhang := (sl.Start() - lastStart)
-		if overhang < -TileWidth || overhang > TileWidth {
-			log.Println(overhang, TileWidth, sl, sl.Start(), lastStart)
-			panic("logic error")
+		if overhang > TileWidth {
+			panic("tilewidth logic error")
+		}
+		for overhang < -TileWidth {
+			// can get here with long reads if a read from the previous slice
+			// extended > tileWidth into the next slice.
+			// could get slightly better by taking average, but should be pretty close
+			// as long as the cram slices are largish.
+			sl.alnStart += TileWidth
+			sl.alnSpan -= TileWidth
+			overhang = (sl.Start() - lastStart)
+		}
+		if sl.alnSpan < 0 {
+			// if we did so much correction for overlapping bins above that alnSpan
+			// becomes negative, then just skip this bin.
+			continue
 		}
 		// 100000 is an arbitrary scalar to make sure we have enough resolution.
 		perBase := int64(100000 * float64(sl.SliceBytes()) / float64(int64(sl.Span())))
@@ -96,7 +109,7 @@ func makeSizes(slices []Slice) []int64 {
 		}
 		cmp := int(sl.Start()+sl.Span()) / TileWidth
 		if len(sizes) > cmp+1 || cmp < len(sizes)-1 {
-			log.Println(len(sizes), cmp)
+			log.Println(len(sizes), cmp, overhang, sl.alnSpan)
 			panic("logic error")
 		}
 

@@ -110,3 +110,8 @@ assert_exit_code 0
 assert_in_stderr "index.html for overview"
 assert_equal $(num_colcounts /tmp/1kg/1kg-indexcov.ped) 1
 
+
+run check_crai_long_reads ./goleft_test indexcov -fai test-data/viral.fa.fai -d /tmp/clr test-data/viral.crai
+assert_exit_code 0
+assert_in_stderr "index.html for overview"
+

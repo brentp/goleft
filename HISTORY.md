@@ -1,3 +1,7 @@
+v0.1.19
+=======
++ `indexcov`: fix for long reads with cram. (#43)
+
 v0.1.18
 =======
 + `indexsplit`: fix off-by-one that resulted in double-counting some regions.
