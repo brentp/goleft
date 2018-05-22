@@ -191,6 +191,9 @@ func plotBins(counts []*counter, samples []string) (chartjs.Chart, string) {
 		if i < backgroundN {
 			xys = bxys
 		}
+		if c == nil {
+			continue
+		}
 		tot := float64(c.in + c.out)
 		val := float64(c.low) / tot
 		xys.xs = append(xys.xs, val)

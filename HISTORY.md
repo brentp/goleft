@@ -1,3 +1,7 @@
+v0.2.0 (dev)
+======
++ `indexcov`: better error message and handling of excluded chromosomes.
+
 v0.1.19
 =======
 + `indexcov`: fix for long reads with cram. (#43)

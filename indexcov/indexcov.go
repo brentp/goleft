@@ -521,6 +521,7 @@ func run(refs []*sam.Reference, idxs []*Index, names []string, base string) (map
 	for _, ref := range refs {
 		chrom := ref.Name()
 		if cli.exclude != nil && cli.exclude.Match([]byte(chrom)) {
+			log.Printf("indexcov: excluding chromosome: %s because of exclude-pattern: %s", chrom, cli.ExcludePatt)
 			continue
 		}
 		ir++
@@ -723,6 +724,9 @@ func writeIndex(sexes map[string][]float64, counts []*counter, keys []string, sa
 	tmpl := "unknown\t%s\t-9\t-9\t%d\t-9\t"
 	var inferred int
 	for i, s := range samples {
+		if counts[i] == nil {
+			continue
+		}
 		if len(sexes) > 1 { // 1 key for _inferred
 			inferred = int(0.5 + sexes[keys[0]][i])
 		} else {
