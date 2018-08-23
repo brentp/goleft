@@ -1,6 +1,7 @@
 v0.2.0 (dev)
 ======
 + `indexcov`: better error message and handling of excluded chromosomes.
++ `indexcov`: if given crais and no fai, indexcov will try to read the cram header using `samtools view`.
 
 v0.1.19
 =======

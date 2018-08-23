@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -30,6 +31,7 @@ import (
 	"github.com/brentp/go-chartjs/types"
 	"github.com/brentp/goleft"
 	"github.com/brentp/goleft/indexcov/crai"
+	"github.com/brentp/xopen"
 )
 
 // Ploidy indicates the expected ploidy of the samples.
@@ -328,6 +330,27 @@ func getReferences() []*sam.Reference {
 
 	if cli.Fai != "" {
 		return ReadFai(cli.Fai, cli.Chrom)
+	}
+
+	if strings.HasSuffix(cli.Bam[0], ".crai") {
+		path := cli.Bam[0][:len(cli.Bam[0])-5]
+		if xopen.Exists(cli.Bam[0][:len(cli.Bam[0])-5] + ".cram") {
+			path = cli.Bam[0][:len(cli.Bam[0])-5] + ".cram"
+		}
+
+		if p, err := exec.LookPath("samtools"); err == nil {
+			log.Println(p, "view", "-H", path)
+			if out, e := exec.Command(p, "view", "-H", path).Output(); e == nil {
+				if h, e := sam.NewHeader(out, nil); e == nil {
+					return h.Refs()
+				}
+			} else {
+				log.Println(e)
+			}
+		} else {
+			log.Println(err)
+			log.Fatal("indexcov: samtools is required to be on the path if indexcov is given cram indexes without an fai")
+		}
 	}
 	return RefsFromBam(cli.Bam[0], cli.Chrom)
 }
