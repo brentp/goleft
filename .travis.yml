@@ -12,7 +12,7 @@ before_install:
   - sudo apt-get -qq update
   - sudo apt-get install -y bedtools samtools
 script:
-  - cd indexcov && bash functional-tests.sh ; cd ..
-  - cd depth && bash functional-test.sh ; cd ..
-  - cd indexsplit && bash functional-tests.sh; cd ..
-  - cd samplename && bash functional-tests.sh; cd ..
+  - cd indexcov && travis_wait 30 bash functional-tests.sh ; cd ..
+  - cd depth && travis_wait 30 bash functional-test.sh ; cd ..
+  - cd indexsplit && travis_wait 30 bash functional-tests.sh; cd ..
+  - cd samplename && travis_wait 30 bash functional-tests.sh; cd ..
