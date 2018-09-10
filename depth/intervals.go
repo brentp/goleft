@@ -63,10 +63,15 @@ func ReadTree(ps ...string) map[string]*interval.IntTree {
 			}
 
 			chrom, start, end := chromStartEndFromLine(line)
+			if start >= end {
+				continue
+			}
 			if _, ok := tree[chrom]; !ok {
 				tree[chrom] = &interval.IntTree{}
 			}
-			tree[chrom].Insert(irange{start, end, uintptr(k)}, false)
+			if err := tree[chrom].Insert(irange{start, end, uintptr(k)}, false); err != nil {
+				panic(err)
+			}
 			k += 1
 		}
 	}

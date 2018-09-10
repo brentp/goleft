@@ -14,13 +14,15 @@ import (
 	"github.com/biogo/hts/bam"
 	"github.com/biogo/hts/sam"
 	"github.com/brentp/goleft/samplename"
+	"github.com/brentp/smoove/shared"
 	"github.com/brentp/xopen"
 )
 
 var cli = struct {
 	N       int      `arg:"-n,help:number of reads to sample for length"`
 	Regions string   `arg:"-r,help:optional bed file to specify target regions"`
-	Bams    []string `arg:"positional,required,help:bam for which to estimate coverage"`
+	Fasta   string   `arg:"-f,help:fasta file. required for cram format"`
+	Bams    []string `arg:"positional,required,help:bams/crams for which to estimate coverage"`
 }{N: 1000000}
 
 func pcheck(e error) {
@@ -126,7 +128,8 @@ func BamStats(br *bam.Reader, n int) Stats {
 	for i := 0; i < skipReads; i++ {
 		_, err := br.Read()
 		if err == io.EOF {
-			log.Fatal("covmed: not enough reads to sample for bam stats")
+			log.Println("covmed: not enough reads to sample for bam stats")
+			break
 		}
 	}
 	s := Stats{}
@@ -223,10 +226,7 @@ func Main() {
 	arg.MustParse(&cli)
 	for _, bamPath := range cli.Bams {
 
-		fh, err := os.Open(bamPath)
-		pcheck(err)
-
-		brdr, err := bam.NewReader(fh, 2)
+		brdr, err := shared.NewReader(bamPath, 2, cli.Fasta)
 		pcheck(err)
 
 		names := strings.Join(samplename.Names(brdr.Header()), ",")
@@ -234,15 +234,20 @@ func Main() {
 			names = "<no-read-groups>"
 		}
 
-		ifh, ierr := os.Open(bamPath + ".bai")
-		if ierr != nil {
-			// if .bam.bai didn't exist, check .bai
-			ifh, err = os.Open(bamPath[:len(bamPath)-4] + ".bai")
-		}
-		pcheck(err)
+		var idx *bam.Index
 
-		idx, err := bam.ReadIndex(ifh)
-		pcheck(err)
+		if strings.HasSuffix(bamPath, ".bam") {
+
+			ifh, ierr := os.Open(bamPath + ".bai")
+			if ierr != nil {
+				// if .bam.bai didn't exist, check .bai
+				ifh, err = os.Open(bamPath[:len(bamPath)-4] + ".bai")
+			}
+			pcheck(err)
+
+			idx, err = bam.ReadIndex(ifh)
+			pcheck(err)
+		}
 
 		genomeBases := 0
 		mapped := uint64(0)
@@ -250,14 +255,16 @@ func Main() {
 		var notFound []string
 		for _, ref := range brdr.Header().Refs() {
 			genomeBases += ref.Len()
-			stats, ok := idx.ReferenceStats(ref.ID())
-			if !ok {
-				if !strings.Contains(ref.Name(), "random") && ref.Len() > 10000 {
-					notFound = append(notFound, ref.Name())
+			if idx != nil {
+				stats, ok := idx.ReferenceStats(ref.ID())
+				if !ok {
+					if !strings.Contains(ref.Name(), "random") && ref.Len() > 10000 {
+						notFound = append(notFound, ref.Name())
+					}
+					continue
 				}
-				continue
+				mapped += stats.Mapped
 			}
-			mapped += stats.Mapped
 		}
 		if len(notFound) > 0 {
 			fmt.Fprintf(os.Stderr, "chromosomes: %s not found in %s\n", strings.Join(notFound, ","), bamPath)
