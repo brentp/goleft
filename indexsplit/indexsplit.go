@@ -96,7 +96,7 @@ func Split(paths []string, refs []*sam.Reference, N int, probs map[string]*inter
 				for i >= len(sizes) {
 					sizes = append(sizes, make([]float64, 0))
 				}
-				if i > len(osz) {
+				if i >= len(osz) {
 					break
 				}
 				s, o := sizes[i], osz[i]

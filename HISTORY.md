@@ -2,6 +2,7 @@ v0.2.0 (dev)
 ======
 + `indexcov`: better error message and handling of excluded chromosomes.
 + `indexcov`: if given crais and no fai, indexcov will try to read the cram header using `samtools view`.
++ `indexsplit`: fix rare panic in CRAI files due to an off-by-one error.
 
 v0.1.19
 =======
