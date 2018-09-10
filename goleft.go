@@ -1,3 +1,3 @@
 package goleft
 
-const Version = "0.2.0"
+const Version = "0.2.1-dev"
