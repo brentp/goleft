@@ -79,7 +79,7 @@ func (x *Index) init() {
 	if x.Index != nil {
 		x.sizes, x.mapped, x.unmapped = getSizes(x.Index)
 		x.Index = nil
-	} else {
+	} else if x.crai != nil {
 		x.sizes = x.crai.Sizes()
 		x.crai = nil
 	}
@@ -129,6 +129,9 @@ func (x *Index) NormalizedDepth(refID int) []float32 {
 	ref := x.sizes[refID]
 
 	depths := make([]float32, 0, len(ref))
+	if x.medianSizePerTile == 0 {
+		return depths
+	}
 
 	for i, o := range ref {
 		depths = append(depths, float32(float64(o)/x.medianSizePerTile))
@@ -379,10 +382,10 @@ func Main() {
 
 	names := make([]string, len(cli.Bam))
 	idxs := make([]*Index, len(cli.Bam))
-	ch := make(chan rdi, 4)
+	ch := make(chan rdi, 8)
 	wg := &sync.WaitGroup{}
-	wg.Add(4)
-	for k := 0; k < 4; k++ {
+	wg.Add(8)
+	for k := 0; k < 8; k++ {
 		go func() {
 			for r := range ch {
 				idx, name, i := readIndex(r)
@@ -478,7 +481,7 @@ func readIndex(r rdi) (*Index, string, int) {
 	}
 	idx := &Index{Index: dx, path: b}
 	idx.init()
-	nm, err := GetShortName(b, false)
+	nm, err := GetShortName(b, strings.HasSuffix(b, ".bai"))
 	if err != nil {
 		panic(err)
 	}

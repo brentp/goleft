@@ -195,7 +195,7 @@ func plotBins(counts []*counter, samples []string) (chartjs.Chart, string) {
 			continue
 		}
 		tot := float64(c.in + c.out)
-		val := float64(c.low) / tot
+		val := float64(c.low) / math.Max(tot, 1)
 		xys.xs = append(xys.xs, val)
 		if val > max {
 			max = val
