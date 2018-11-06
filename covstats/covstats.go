@@ -119,7 +119,7 @@ func (s Stats) String() string {
 const skipReads = 100000
 
 // BamStats takes bam reader sample N well-behaved sites and return the coverage and insert-size info
-func BamStats(br *bam.Reader, n int) Stats {
+func BamStats(br *bam.Reader, n int, skipReads int) Stats {
 	br.Omit(bam.AllVariableLengthData)
 	sizes := make([]int, 0, 2*n)
 	insertSizes := make([]int, 0, n)
@@ -251,7 +251,7 @@ func Main() {
 
 		genomeBases := 0
 		mapped := uint64(0)
-		sizes := BamStats(brdr, cli.N)
+		sizes := BamStats(brdr, cli.N, skipReads)
 		var notFound []string
 		for _, ref := range brdr.Header().Refs() {
 			genomeBases += ref.Len()
