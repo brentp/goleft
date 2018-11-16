@@ -65,6 +65,10 @@ type Index struct {
 	unmapped          uint64
 }
 
+func (i *Index) Path() string {
+	return i.path
+}
+
 // Sizes returns the size of each block in slices of chromosomes.
 func (i *Index) Sizes() [][]int64 {
 	return i.sizes
@@ -81,6 +85,9 @@ func (x *Index) init() {
 		x.Index = nil
 	} else if x.crai != nil {
 		x.sizes = x.crai.Sizes()
+		if x.sizes == nil {
+			log.Fatal("bad index:", x.path)
+		}
 		x.crai = nil
 	}
 
@@ -451,6 +458,7 @@ func readIndex(r rdi) (*Index, string, int) {
 		}
 		cr, err := crai.ReadIndex(gz)
 		if err != nil {
+			log.Printf("erorr from index: %s", b)
 			panic(err)
 		}
 		idx := &Index{crai: cr, path: b}
@@ -544,10 +552,17 @@ func run(refs []*sam.Reference, idxs []*Index, names []string, base string) (map
 
 	fmt.Fprintf(bgz, "#chrom\tstart\tend\t%s\n", strings.Join(names, "\t"))
 	ir := -1
+	var nreported = 0
 	for _, ref := range refs {
 		chrom := ref.Name()
 		if cli.exclude != nil && cli.exclude.Match([]byte(chrom)) {
-			log.Printf("indexcov: excluding chromosome: %s because of exclude-pattern: %s", chrom, cli.ExcludePatt)
+			if nreported < 10 {
+				log.Printf("indexcv: excluding chromosome: %s because of exclude-pattern: %s", chrom, cli.ExcludePatt)
+				nreported += 1
+				if nreported == 10 {
+					log.Println("not reporting further skipped chromosomes")
+				}
+			}
 			continue
 		}
 		ir++

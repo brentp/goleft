@@ -42,10 +42,10 @@ type Index struct {
 
 const TileWidth = 16384
 
-func (i *Index) Sizes() [][]int64 {
-	refs := make([][]int64, len(i.Slices))
-	for i, s := range i.Slices {
-		refs[i] = makeSizes(s)
+func (idx *Index) Sizes() [][]int64 {
+	refs := make([][]int64, len(idx.Slices))
+	for i, s := range idx.Slices {
+		refs[i] = idx.makeSizes(s)
 	}
 	return refs
 }
@@ -53,7 +53,7 @@ func (i *Index) Sizes() [][]int64 {
 // estimate the sizes (in arbitrary units of 16KB blocks from the cram index.
 // the index has arbitrary slice sizes so this function interpolates the 16KB
 // blocks.
-func makeSizes(slices []Slice) []int64 {
+func (idx *Index) makeSizes(slices []Slice) []int64 {
 	// each slice may be hundreds of KB. This function splits those into 16KB chunks to match the
 	// bam index. If we have e.g. start, end, size: 10000, 30000, 100
 	// then we have to back fill from 0-10000
@@ -61,6 +61,13 @@ func makeSizes(slices []Slice) []int64 {
 		return nil
 	}
 	last := slices[len(slices)-1]
+	if last.alnSpan < 0 {
+		last.alnSpan = 0
+	}
+	if last.alnSpan > 1000000 {
+		last.alnSpan = 0
+	}
+
 	sizes := make([]int64, 0, (last.Start()+last.Span()+TileWidth)/TileWidth)
 	lastStart := int64(0)
 	lastVal := int64(0)
@@ -90,7 +97,7 @@ func makeSizes(slices []Slice) []int64 {
 			sl.alnSpan -= TileWidth
 			overhang = (sl.Start() - lastStart)
 		}
-		if sl.alnSpan < 0 {
+		if sl.alnSpan <= 0 {
 			// if we did so much correction for overlapping bins above that alnSpan
 			// becomes negative, then just skip this bin.
 			continue
@@ -153,6 +160,10 @@ func ReadIndex(r io.Reader) (*Index, error) {
 		if alnSpan, err := strconv.Atoi(parts[2]); err != nil {
 			return nil, fmt.Errorf("crai: unable to parse alignment span (%s) at line %d", parts[2], iline)
 		} else {
+			if alnSpan < 0 {
+				log.Printf("crai: negative alnSpan in line %d: %s. breaking early.", iline, line)
+				break
+			}
 			sl.alnSpan = int64(alnSpan)
 		}
 
