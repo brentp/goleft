@@ -1,5 +1,7 @@
-v0.2.1 (dev)
-============
+v0.2.1
+======
++ `indexcov`:more defense for bad crai's
++ `indexcov`: now works on just `*.bai` if a .fai is also given with -f.
 
 v0.2.0 
 ======
