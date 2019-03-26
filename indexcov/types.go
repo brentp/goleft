@@ -7,6 +7,8 @@ import (
 
 	"github.com/biogo/hts/bam"
 	"github.com/biogo/hts/bgzf"
+	"github.com/biogo/hts/bgzf/index"
+	"github.com/biogo/hts/csi"
 )
 
 const (
@@ -30,6 +32,18 @@ type bin struct {
 	Chunks []bgzf.Chunk
 }
 
+type csiRefIndex struct {
+	bins  []csiBin
+	stats *index.ReferenceStats
+}
+
+type csiBin struct {
+	bin     uint32
+	left    bgzf.Offset
+	records uint64
+	chunks  []bgzf.Chunk
+}
+
 type referenceStats struct {
 	// Chunk is the span of the indexed BGZF
 	// holding alignments to the reference.
@@ -40,6 +54,36 @@ type referenceStats struct {
 
 	// Unmapped is the count of unmapped reads.
 	Unmapped uint64
+}
+
+func getCSISizes(idx *csi.Index) ([][]int64, uint64, uint64) {
+	var mapped, unmapped uint64
+	refs := reflect.ValueOf(*idx).FieldByName("refs")
+	ptr := unsafe.Pointer(refs.Pointer())
+	ret := (*(*[1 << 28]csiRefIndex)(ptr))[:refs.Len()]
+
+	m := make([][]int64, len(ret))
+	for i, r := range ret {
+		st, ok := idx.ReferenceStats(i)
+		if ok {
+			mapped += st.Mapped
+			unmapped += st.Unmapped
+		} else {
+			log.Printf("no reference stats found for %dth reference", i)
+		}
+		if len(r.bins) < 2 {
+			m[i] = make([]int64, 0)
+			continue
+		}
+		m[i] = make([]int64, len(r.bins)-1)
+		for k, iv := range r.bins[1:] {
+			m[i][k] = vOffset(iv.left) - vOffset(r.bins[k].left)
+			if m[i][k] < 0 {
+				panic("expected positive change in vOffset")
+			}
+		}
+	}
+	return m, mapped, unmapped
 }
 
 func getSizes(idx *bam.Index) ([][]int64, uint64, uint64) {

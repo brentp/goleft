@@ -26,6 +26,7 @@ import (
 	"github.com/biogo/biogo/io/seqio/fai"
 	"github.com/biogo/hts/bam"
 	"github.com/biogo/hts/bgzf"
+	"github.com/biogo/hts/csi"
 	"github.com/biogo/hts/sam"
 	chartjs "github.com/brentp/go-chartjs"
 	"github.com/brentp/go-chartjs/types"
@@ -55,6 +56,7 @@ var MaxCN = float32(8)
 // Index wraps a bam.Index to cache calculated values.
 type Index struct {
 	*bam.Index
+	csi  *csi.Index
 	crai *crai.Index
 	path string
 
@@ -82,6 +84,9 @@ func vOffset(o bgzf.Offset) int64 {
 func (x *Index) init() {
 	if x.Index != nil {
 		x.sizes, x.mapped, x.unmapped = getSizes(x.Index)
+		x.Index = nil
+	} else if x.csi != nil {
+		x.sizes, x.mapped, x.unmapped = getCSISizes(x.csi)
 		x.Index = nil
 	} else if x.crai != nil {
 		x.sizes = x.crai.Sizes()
@@ -474,20 +479,63 @@ func readIndex(r rdi) (*Index, string, int) {
 	if strings.HasSuffix(b, ".bai") {
 		suf = ""
 	}
+	idx := &Index{path: b}
+	if strings.HasSuffix(b, ".csi") {
+		rdr, err := os.Open(b)
+		if err != nil {
+			panic(err)
+		}
+		gz, err := gzip.NewReader(rdr)
+		if err != nil {
+			panic(err)
+		}
+		c, err := csi.ReadFrom(gz)
+		if err != nil {
+			panic(err)
+		}
+		idx.csi = c
+		nm, err := GetShortName(b, false)
+		if err != nil {
+			panic(err)
+		}
+		rdr.Close()
+		idx.init()
+		return idx, nm, r.i
+	}
 	rdr, err := os.Open(b + suf)
+	var isCSI = false
 	if err != nil {
 		var terr error
 		rdr, terr = os.Open(b[:(len(b)-4)] + suf)
 		if terr != nil {
-			panic(err)
+			if suf == ".bai" {
+				log.Printf("opening %s.csi", b)
+				rdr, terr = os.Open(b + ".csi")
+			}
+			if terr != nil {
+				panic(err)
+			}
+			gz, err := gzip.NewReader(rdr)
+			if err != nil {
+				panic(err)
+			}
+			idx.csi, err = csi.ReadFrom(gz)
+			if err != nil {
+				panic(err)
+			}
+			isCSI = true
+			rdr.Close()
 		}
 	}
 
-	dx, err := bam.ReadIndex(bufio.NewReader(rdr))
-	if err != nil {
-		panic(err)
+	if !isCSI {
+		dx, err := bam.ReadIndex(bufio.NewReader(rdr))
+		if err != nil {
+			panic(err)
+		}
+		idx.Index = dx
+		rdr.Close()
 	}
-	idx := &Index{Index: dx, path: b}
 	idx.init()
 	nm, err := GetShortName(b, strings.HasSuffix(b, ".bai"))
 	if err != nil {
