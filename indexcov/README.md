@@ -14,6 +14,9 @@ In our tests, we can **estimate depth across 60X genomes for 30 samples in 30 se
 
 Interactive HTML plots of depth are output for each chromosome. **Live examples of the interactive output are available [here](http://indexcov.s3-website-us-east-1.amazonaws.com/)**
 
+Note that [covviz](https://github.com/brwnj/covviz) provides a very nice and more interactive view of `indexcov` results that
+facilitate finding even smaller deletions with a quick view.
+
 Usage
 =====
 
