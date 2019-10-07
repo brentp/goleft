@@ -8,7 +8,7 @@
 
 
 goleft is a collection of bioinformatics tools written in
-[go](https://gitub.com/golang/go) distributed together
+[go](https://github.com/golang/go) distributed together
 as a single binary under a liberal (MIT) license.
 
 Running the binary `goleft` will give a list of subcommands
