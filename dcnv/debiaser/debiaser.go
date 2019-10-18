@@ -200,8 +200,10 @@ func (isvd *SVD) Debias(imat *mat.Dense) {
 }
 
 func extractSVD(svd *mat.SVD) (s []float64, u, v *mat.Dense) {
-	um := svd.UTo(nil)
-	vm := svd.VTo(nil)
+	var um *mat.Dense
+	var vm *mat.Dense
+	svd.UTo(um)
+	svd.VTo(vm)
 	s = svd.Values(nil)
 	return s, um, vm
 }
