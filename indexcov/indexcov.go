@@ -712,7 +712,9 @@ func pca(pca8 [][]uint8, samples []string) (*mat.Dense, []chartjs.Chart, string)
 	vars = vars[:k]
 
 	var proj mat.Dense
-	proj.Mul(imat, pc.VectorsTo(nil).Slice(0, len(pca8[0]), 0, k))
+	var dst mat.Dense
+	pc.VectorsTo(&dst)
+	proj.Mul(imat, dst.Slice(0, len(pca8[0]), 0, k))
 	pcaPlots, customjs := plotPCA(&proj, samples, vars)
 
 	return &proj, pcaPlots, customjs
