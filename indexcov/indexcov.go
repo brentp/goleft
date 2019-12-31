@@ -454,11 +454,12 @@ func readIndex(r rdi) (*Index, string, int) {
 		}
 		gz, err := gzip.NewReader(f)
 		if err != nil {
+			log.Printf("error from index: %s", b)
 			panic(err)
 		}
 		cr, err := crai.ReadIndex(gz)
 		if err != nil {
-			log.Printf("erorr from index: %s", b)
+			log.Printf("error from index: %s", b)
 			panic(err)
 		}
 		idx := &Index{crai: cr, path: b}

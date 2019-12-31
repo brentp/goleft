@@ -1,3 +1,7 @@
+v0.2.2 (dev)
+======
++ `indexcov`: better message on empty crai
+
 v0.2.1
 ======
 + `indexcov`:more defense for bad crai's
