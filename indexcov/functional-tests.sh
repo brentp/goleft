@@ -26,7 +26,7 @@ get() {
 num_colcounts() {
     set -e
     f=$1
-    awk 'BEGIN{FS=OFS="\t"} { print NF }' $f | uniq -c | wc -l
+    awk 'BEGIN{FS=OFS="\t"} NR > 1 { print NF }' $f | uniq -c | wc -l
 }
 export -f num_colcounts
 
@@ -62,9 +62,6 @@ assert_exit_code 1
 assert_in_stderr "no usable chromsomes in bam"
 
 run check_sex_warning ./goleft_test indexcov --sex chrX,chrY -d /tmp/tt sample_name_0001.bam
-assert_exit_code 1
-assert_in_stderr "found chromosome \"X\", wanted \"chrX\""
-assert_in_stderr "found chromosome \"Y\", wanted \"chrY\""
 assert_equal $(num_colcounts /tmp/tt/tt-indexcov.ped) 1
 
 mkdir -p samples/ && cd samples/

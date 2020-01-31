@@ -1,6 +1,8 @@
-v0.2.2 (dev)
+v0.2.2
 ======
 + `indexcov`: better message on empty crai
++ `indexcov`: allow sending indexes as globs (to avoid argument length limit)
++ `indexcov`: if expected sex chroms are X,Y also find chrX,chrY (and use sorted order for output)
 
 v0.2.1
 ======
