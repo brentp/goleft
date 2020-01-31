@@ -365,6 +365,21 @@ func getReferences() []*sam.Reference {
 	return RefsFromBam(cli.Bam[0], cli.Chrom)
 }
 
+func expandGlobs(paths []string) []string {
+	result := make([]string, 0, len(paths))
+	for _, p := range paths {
+		matches, err := filepath.Glob(p)
+		if err != nil {
+			log.Fatal("indexcov: error with file path:" + p + "\n" + err.Error())
+		}
+		for _, m := range matches {
+			result = append(result, m)
+		}
+	}
+	return result
+
+}
+
 // Main is called from the goleft dispatcher
 func Main() {
 
@@ -387,6 +402,8 @@ func Main() {
 	// the lengths and names of references from bams or fasta
 	refs := getReferences()
 
+	cli.Bam = expandGlobs(cli.Bam)
+
 	names := make([]string, len(cli.Bam))
 	idxs := make([]*Index, len(cli.Bam))
 	ch := make(chan rdi, 8)
@@ -402,7 +419,6 @@ func Main() {
 			wg.Done()
 		}()
 	}
-
 	for i, b := range cli.Bam {
 		ch <- rdi{bamPath: b, i: i}
 	}
@@ -426,7 +442,7 @@ func Main() {
 	}
 
 	chartjs.XFloatFormat = "%.2f"
-	if indexPath := writeIndex(sexes, counts, cli.sex, names, cli.Directory, pca8, slopes, chromNames, mapped, unmapped); indexPath != "" {
+	if indexPath := writeIndex(sexes, counts, names, cli.Directory, pca8, slopes, chromNames, mapped, unmapped); indexPath != "" {
 		fmt.Fprintf(os.Stderr, "indexcov finished: see %s for overview of output\n", indexPath)
 	}
 }
@@ -512,7 +528,8 @@ func sameChrom(as []string, b string) bool {
 			na = "chr" + a
 		}
 		if na == b {
-			log.Printf(`indexcov: found chromosome "%s", wanted "%s" please use exact chromosome names for --sex.`, b, a)
+			return true
+			//log.Printf(`indexcov: found chromosome "%s", wanted "%s" please use exact chromosome names for --sex.`, b, a)
 		}
 	}
 	return false
@@ -727,16 +744,10 @@ func getBase(directory string) string {
 }
 
 // write an index.html and a ped file. includes the PC projections and inferred sexes.
-func writeIndex(sexes map[string][]float64, counts []*counter, keys []string, samples []string, directory string, pca8 [][]uint8, slopes []float32,
+func writeIndex(sexes map[string][]float64, counts []*counter, samples []string, directory string, pca8 [][]uint8, slopes []float32,
 	chromNames []string, mapped []uint64, unmapped []uint64) string {
 	if len(sexes) == 0 {
 		log.Println("sex chromosomes not found.")
-	} else {
-		for _, k := range keys {
-			if _, ok := sexes[k]; !ok {
-				fmt.Printf("indexcov: chromosome %s not found.\n", k)
-			}
-		}
 	}
 	pcs, pcaPlots, pcajs := pca(pca8, samples)
 	binChart, binjs := plotBins(counts, samples)
@@ -747,7 +758,15 @@ func writeIndex(sexes map[string][]float64, counts []*counter, keys []string, sa
 		panic(err)
 	}
 	defer f.Close()
-	hdr := make([]string, len(keys), len(keys)+7)
+	hdr := make([]string, len(sexes), len(sexes)+7)
+	keys := make([]string, 0, len(sexes))
+	for k := range sexes {
+		if k == "_inferred" {
+			continue
+		}
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
 	for i, k := range keys {
 		hdr[i] = "CN" + k
 	}
