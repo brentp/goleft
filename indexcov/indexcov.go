@@ -758,7 +758,7 @@ func writeIndex(sexes map[string][]float64, counts []*counter, samples []string,
 		panic(err)
 	}
 	defer f.Close()
-	hdr := make([]string, len(sexes), len(sexes)+7)
+	hdr := make([]string, len(sexes)-1, len(sexes)+7)
 	keys := make([]string, 0, len(sexes))
 	for k := range sexes {
 		if k == "_inferred" {
