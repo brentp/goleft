@@ -50,13 +50,20 @@ func getSizes(idx *bam.Index) ([][]int64, uint64, uint64) {
 	ret := (*(*[1 << 28]oRefIndex)(ptr))[:refs.Len()]
 	// save some memory.
 	m := make([][]int64, len(ret))
+	n_messages := 0
 	for i, r := range ret {
 		st, ok := idx.ReferenceStats(i)
 		if ok {
 			mapped += st.Mapped
 			unmapped += st.Unmapped
 		} else {
-			log.Printf("no reference stats found for %dth reference", i)
+			if n_messages <= 10 {
+				log.Printf("no reference stats found for %dth reference chromosome", i)
+			}
+			if n_messages == 10 {
+				log.Printf("not reporting further chromosomes without stats. %d", i)
+			}
+			n_messages += 1
 		}
 		if len(r.Intervals) < 2 {
 			m[i] = make([]int64, 0)

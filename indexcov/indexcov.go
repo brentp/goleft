@@ -233,8 +233,12 @@ func GetShortName(b string, isCrai bool) (string, error) {
 	}
 	vs := strings.Split(b, "/")
 	v := vs[len(vs)-1]
-	vs = strings.SplitN(v, ".", 2)
-	return vs[0], nil
+	vs = strings.Split(v, ".")
+	if len(vs) <= 2 {
+		return vs[0], nil
+	}
+	v = strings.Join(vs[0:len(vs)-1], "-")
+	return v, nil
 }
 
 func getWriter(base string) (*bgzf.Writer, error) {
