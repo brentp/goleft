@@ -914,7 +914,10 @@ func GetCN(depths [][]float32) []float64 {
 			if pLo > 0.3 {
 				tmp = tmp[lows:]
 			}
-			med := float64(float32(Ploidy) * tmp[int(float64(len(tmp))*0.5)])
+			var med float64 = 0
+			if len(tmp) > 0 {
+				med = float64(float32(Ploidy) * tmp[int(float64(len(tmp))*0.5)])
+			}
 			meds = append(meds, med)
 		} else {
 			meds = append(meds, -0.1)

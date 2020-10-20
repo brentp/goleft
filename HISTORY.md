@@ -1,3 +1,7 @@
+v0.2.4 (dev)
+============
++ `indexcov`: protect against empty chroms
+
 v0.2.3
 ======
 + `indexcov`: fix bug in text output header.
