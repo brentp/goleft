@@ -63,10 +63,12 @@ lengths. The sample names are inferred from the file names. crai resolution is o
 Example usage with cram looks like:
 
 ```
-goleft indexcov -d output/ --fai h human_g1k_v37.fasta.fai /path/to/*.crai
+goleft indexcov --extranormalize -d output/ --fai h human_g1k_v37.fasta.fai /path/to/*.crai
 ```
 
 **note** that the .fai (not the fasta) is required and that the files are .crai (not cram).
+
+The `--extranormalize` flag greatly improves the results on CRAM (crai) files.
 
 How It Works
 ============

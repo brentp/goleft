@@ -38,15 +38,16 @@ import (
 var Ploidy = 2
 
 var cli = &struct {
-	Directory   string         `arg:"-d,required,help:directory for output files"`
-	IncludeGL   bool           `arg:"-e,help:plot GL chromosomes like: GL000201.1 which are not plotted by default"`
-	ExcludePatt string         `arg:-p,help:regular expression of chromosome names to exclude"`
-	Sex         string         `arg:"-X,help:comma delimited names of the sex chromosome(s) used to infer sex. Set to '' if no sex chromosomes are present."`
-	Chrom       string         `arg:"-c,help:optional chromosome to extract depth. default is entire genome."`
-	Fai         string         `arg:"-f,help:fasta index file. Required when crais are used."`
-	Bam         []string       `arg:"positional,required,help:bam(s) or crais for which to estimate coverage"`
-	sex         []string       `arg:"-"`
-	exclude     *regexp.Regexp `arg:"-"`
+	Directory      string         `arg:"-d,required,help:directory for output files"`
+	IncludeGL      bool           `arg:"-e,help:plot GL chromosomes like: GL000201.1 which are not plotted by default"`
+	ExcludePatt    string         `arg:-p,help:regular expression of chromosome names to exclude"`
+	Sex            string         `arg:"-X,help:comma delimited names of the sex chromosome(s) used to infer sex. Set to '' if no sex chromosomes are present."`
+	Chrom          string         `arg:"-c,help:optional chromosome to extract depth. default is entire genome."`
+	Fai            string         `arg:"-f,help:fasta index file. Required when crais are used."`
+	ExtraNormalize bool           `arg:"-n,help:normalize across samples and do local smoothign within sample. this is recommended for CRAI"`
+	Bam            []string       `arg:"positional,required,help:bam(s) or crais for which to estimate coverage"`
+	sex            []string       `arg:"-"`
+	exclude        *regexp.Regexp `arg:"-"`
 }{Sex: "X,Y", ExcludePatt: `^chrEBV$|^NC|_random$|Un_|^HLA\-|_alt$|hap\d$`}
 
 // MaxCN is the maximum normalized value.
@@ -157,6 +158,9 @@ const slotsMid = float64(2) / float64(3)
 
 func tint(f float32) int {
 	if v := int(f); v < slots {
+		if v < 0 {
+			return 0
+		}
 		return v
 	}
 	return slots - 1
@@ -429,7 +433,7 @@ func Main() {
 	close(ch)
 	wg.Wait()
 
-	sexes, counts, pca8, chromNames, slopes := run(refs, idxs, names, getBase(cli.Directory))
+	sexes, counts, pca8, chromNames, slopes := run(refs, idxs, names, getBase(cli.Directory), cli.ExtraNormalize)
 	mapped := make([]uint64, len(names))
 	unmapped := make([]uint64, len(names))
 	anygt := false
@@ -539,7 +543,57 @@ func sameChrom(as []string, b string) bool {
 	return false
 }
 
-func run(refs []*sam.Reference, idxs []*Index, names []string, base string) (map[string][]float64, []*counter, [][]uint8, []string, []float32) {
+func normalizeAcrossSamples(depths [][]float32) {
+	// depths is n_samples, n-sites
+	if len(depths) < 5 {
+		return
+	}
+	var maxLen = 0
+	for _, d := range depths {
+		if len(d) > maxLen {
+			maxLen = len(d)
+		}
+	}
+	for j := 0; j < maxLen; j++ {
+		var m float64 = 0
+		var n float64 = 0
+		for i := range depths {
+			if len(depths[i]) > j {
+				// take mean of j-1:j+1 for a bit of smoothing
+				m += float64(depths[i][j])
+				n++
+				if j > 0 {
+					m += float64(depths[i][j-1])
+					n++
+				}
+				if j < len(depths[i])-1 {
+					m += float64(depths[i][j+1])
+					n++
+				}
+			}
+		}
+		if int(n) < 3*len(depths)-4 {
+			continue
+		}
+		m /= n
+		if m < 0.1 {
+			continue
+		}
+		for i := range depths {
+			if len(depths[i]) > j {
+				depths[i][j] /= float32(m)
+				if j > 2 && j < len(depths[i])-3 {
+					// i + 1 is not scaled yet, so scale it here.
+					// moving average of window-size 5
+					depths[i][j] = 1.0 / 7.0 * (depths[i][j-3] + depths[i][j-2] + depths[i][j-1] + depths[i][j] + depths[i][j+1]/float32(m) + depths[i][j+2]/float32(m) + depths[i][j+3]/float32(m))
+				}
+			}
+		}
+	}
+
+}
+
+func run(refs []*sam.Reference, idxs []*Index, names []string, base string, interSampleNormalize bool) (map[string][]float64, []*counter, [][]uint8, []string, []float32) {
 	// keep a slice of charts since we plot all of the coverage roc charts in a single html file.
 	sexes := make(map[string][]float64)
 	counts := make([][]int, len(idxs))
@@ -607,6 +661,14 @@ func run(refs []*sam.Reference, idxs []*Index, names []string, base string) (map
 				zero(counts[k])
 			}
 
+		}
+		isSex := sameChrom(cli.sex, chrom)
+
+		if interSampleNormalize && !isSex {
+			normalizeAcrossSamples(depths)
+		}
+
+		for k := range idxs {
 			CountsAtDepth(depths[k], counts[k])
 		}
 
@@ -614,7 +676,6 @@ func run(refs []*sam.Reference, idxs []*Index, names []string, base string) (map
 			fmt.Fprintf(bgz, "%s\t%d\t%d\t%s\n", chrom, i*16384, (i+1)*16384, depthsFor(depths, i))
 		}
 
-		isSex := sameChrom(cli.sex, chrom)
 		if isSex {
 			if len(depths[longesti]) > 0 {
 				sexes[chrom] = GetCN(depths)
@@ -916,7 +977,7 @@ func GetCN(depths [][]float32) []float64 {
 			}
 			var med float64 = 0
 			if len(tmp) > 0 {
-				med = float64(float32(Ploidy) * tmp[int(float64(len(tmp))*0.5)])
+				med = float64(float32(Ploidy) * tmp[int(float64(len(tmp))*0.4)])
 			}
 			meds = append(meds, med)
 		} else {
