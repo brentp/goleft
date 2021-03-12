@@ -474,10 +474,7 @@ func plotSex(sexes map[string][]float64, chroms []string, samples []string) (*ch
 }
 
 func asPng(path string, chart chartjs.Chart, wInches float64, hInches float64) {
-	p, err := plot.New()
-	if err != nil {
-		panic(err)
-	}
+	p := plot.New()
 	p.X.Label.Text = chart.Options.Scales.XAxes[0].ScaleLabel.LabelString
 	p.Y.Label.Text = chart.Options.Scales.YAxes[0].ScaleLabel.LabelString
 	for i := range chart.Data.Datasets {
