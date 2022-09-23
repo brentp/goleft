@@ -499,6 +499,9 @@ func readIndex(r rdi) (*Index, string, int) {
 	if strings.HasSuffix(b, ".bai") {
 		suf = ""
 	}
+  if strings.HasSuffix(b, ".cram") {
+    log.Printf("WARNING: when using CRAM files, send the crai indexes to indexcov, not the alignment files")
+  }
 	rdr, err := os.Open(b + suf)
 	if err != nil {
 		var terr error
