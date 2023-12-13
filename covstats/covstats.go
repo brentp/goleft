@@ -175,10 +175,10 @@ func BamStats(br *bam.Reader, n int, skipReads int) Stats {
 	sort.Ints(sizes)
 
 	if len(sizes) > 0 {
-        s.ProportionBad = float64(nBad) / float64(k + nUnmapped)
-        s.ProportionDuplicate = s.ProportionDuplicate / float64(k + nUnmapped)
-        s.ProportionProperlyPaired = s.ProportionProperlyPaired / float64(k + nUnmapped)
-		s.ProportionUnmapped = float64(nUnmapped) / float64(k + nUnmapped)
+		s.ProportionBad = float64(nBad) / float64(k+nUnmapped)
+		s.ProportionDuplicate = s.ProportionDuplicate / float64(k+nUnmapped)
+		s.ProportionProperlyPaired = s.ProportionProperlyPaired / float64(k+nUnmapped)
+		s.ProportionUnmapped = float64(nUnmapped) / float64(k+nUnmapped)
 		s.ReadLengthMedian = float64(sizes[(len(sizes)-1)/2]) - 1
 		s.ReadLengthMean, _ = meanStd(sizes)
 		sort.Ints(sizes)
