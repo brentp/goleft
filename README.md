@@ -1,6 +1,6 @@
 <!--
-#CGO_ENABLED=0 GOARCH=amd64 go build -o goleft_linux64 --ldflags '-extldflags "-static"' main.go
-#GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -o goleft_osx --ldflags '-extldflags "-static"' main.go
+#CGO_ENABLED=0 GOARCH=amd64 go build -o goleft_linux64 --ldflags '-extldflags "-static"' cmd/goleft/goleft.go
+#GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -o goleft_osx --ldflags '-extldflags "-static"' cmd/goleft/goleft.go
 -->
 # goleft
 
