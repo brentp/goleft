@@ -1,5 +1,10 @@
-v0.2.4 (dev)
-============
+v0.2.6
+======
++ covstats: fix denominator in unmapped
+
+
+v0.2.4
+======
 + `indexcov`: protect against empty chroms
 
 v0.2.3
