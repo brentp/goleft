@@ -30,7 +30,7 @@ var progs = map[string]progPair{
 	"samplename": progPair{"report samplename(s) from a bam's SM tag", samplename.Main},
 }
 
-func printProgs() {
+func printProgs(ret int) {
 
 	var wtr io.Writer = os.Stdout
 
@@ -49,19 +49,19 @@ func printProgs() {
 		fmt.Fprintf(wtr, fmtr, k, progs[k].help)
 
 	}
-	os.Exit(1)
+	os.Exit(ret)
 
 }
 
 func main() {
 
 	if len(os.Args) < 2 {
-		printProgs()
+		printProgs(0)
 	}
 	var p progPair
 	var ok bool
 	if p, ok = progs[os.Args[1]]; !ok {
-		printProgs()
+		printProgs(1)
 	}
 	// remove the prog name from the call
 	os.Args = append(os.Args[:1], os.Args[2:]...)
