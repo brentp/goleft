@@ -56,7 +56,7 @@ x-axis have many missing bins (likely truncated bam files).
 ========================
 
 CRAM indexes are supported. Since there is not a full CRAM parser available in go yet, `indexcov` uses only
-the .crai files and requires a `.fasta.fai` to be sent via `--fai` so that it knows the chromosome names around
+the .crai files and requires a `.fasta.fai` to be sent via `--fai` so that it knows the chromosome names and
 lengths. The sample names are inferred from the file names. crai resolution is often much less than 100KB (compared to)
 16KB for the bam index, but it is sufficient to find large-scale differences in coverage.
 
@@ -69,6 +69,24 @@ goleft indexcov --extranormalize -d output/ --fai h human_g1k_v37.fasta.fai /pat
 **note** that the .fai (not the fasta) is required and that the files are .crai (not cram).
 
 The `--extranormalize` flag greatly improves the results on CRAM (crai) files.
+
+# <a name="BAI only"></a> BAI only
+
+If the BAM file itself is not available, you can pass the BAI only. 
+
+Similar to CRAI, the BAI only mode requires a `.fasta.fai` to be
+sent via `--fai` so that it knows the chromosome names and lengths. 
+
+The sample names are inferred from the file names.
+
+Example usage with BAI files looks like:
+
+```
+goleft indexcov --extranormalize -d output/ --fai human_g1k_v37.fasta.fai /path/to/*.bai
+```
+
+**note** that the .fai (not the fasta) is required when passing the BAI
+
 
 How It Works
 ============
